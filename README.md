@@ -36,6 +36,7 @@ Then visit http://localhost:8791.
   - Ambience beds: rain, vinyl, ocean, wind and crickets.
   - Reverb and ping-pong echo.
 - **Study tools:** a focus timer with a chime and fade-out, song codes for sharing, a shelf of kept songs, and audio recording (local copy only).
+- **Song links:** Copy link gives an address that opens the current song exactly as it is, edits included. In local and hosted copies the address bar follows the song you pick or edit (Evolve's own changes leave it alone), and the tab shows the song's title.
 - **Phones and background tabs:**
   - On touch devices the music plays through a hidden `<audio>` element, so it ignores the silent switch and keeps going with the screen locked.
   - Lock-screen and media-key controls: play, pause, next song on this floor, and previous song.
@@ -50,9 +51,9 @@ Then visit http://localhost:8791.
 
 | Path | What it holds |
 | --- | --- |
-| `index.html` | Page markup. The `<!-- page:start -->` and `<!-- body:start -->` markers are used by the build. |
+| `index.html` | Page markup. The `<!-- page:start -->` and `<!-- body:start -->` markers are used by the build. Home-screen and link-preview tags sit before `page:start`, so only local or hosted copies get them. |
 | `css/style.css` | Styles, with light and dark themes defined as tokens. |
-| `js/core.js` | Seeded random numbers, music theory, floors, pattern generators, song codes. No audio and no DOM. |
+| `js/core.js` | Seeded random numbers, music theory, floors, pattern generators, song codes and links. No audio and no DOM. |
 | `js/audio.js` | Voice presets, sampler, synths, drum kit, ambience beds, effects and the step scheduler (`M.Engine`). |
 | `js/evolve.js` | Evolve and Auto-arrange (`M.Evolve`): bar-line changes driven by an engine's `bar` events, for live play and offline renders. |
 | `js/export.js` | Pure export formats: song to MIDI notes (`M.songNotes`), the MIDI file writer, 16-bit WAV encoding. |
@@ -60,10 +61,11 @@ Then visit http://localhost:8791.
 | `js/ui.js` | Interface, visualizer, timer, shelf, export controls, keyboard shortcuts. |
 | `js/device.js` | Phone and background listening: media-element output, resuming after interruptions, Media Session, the Studio disclosure, service worker registration. |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline app for local or hosted copies. Rebuild the icons with `node tools/make-icons.mjs`. |
+| `tools/og-image.html` | The 1200×630 link preview. `node tools/make-og-image.mjs` renders it to `icons/og-image.png` with headless Chrome. |
 | `samples/*.js` | Packed instrument samples (base64 MP3s, one note every minor third). |
 | `tools/pack-samples.mjs` | Rebuilds `samples/` from MIDI.js soundfont files. |
 | `build.mjs` | Inlines everything into `dist/mezzanine.html` for publishing as a Claude artifact. |
-| `tests/` | Unit tests for theory, generation, song codes, export formats and the evolve module. |
+| `tests/` | Unit tests for theory, generation, song codes and links, export formats and the evolve module. |
 
 ## Develop
 

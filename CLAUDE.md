@@ -8,14 +8,15 @@ Generative ambient and elevator music in the browser. See README.md for features
 - Musicality comes first. Grid rows are relative to the current chord (bass: R/3/5/8/approach; arp: chord tones rising; melody: scale-degree offsets −3..+8 from the chord root). Keep new generators chord-aware.
 - `M.partStep` in `js/core.js` decides which notes a part plays on a step, for both `Engine.schedule` and the MIDI export (`M.songNotes`). Change note choice, lengths, ties, ranges or fills there, so live audio and MIDI stay the same.
 - Song codes (`M.encodeSong`/`M.decodeSong`) are a public format. Saved songs on users' shelves must keep loading, so add fields with defaults and never rename them.
+- Song links (`M.songLink`/`M.songFromLink`) carry the code as the `#fragment`, so codes must stay bare tokens: letters, digits, `.` `-` `_`. A test checks this.
 - Do not edit `dist/` or `samples/` by hand. Regenerate them with `npm run build` and `tools/pack-samples.mjs`.
 
 ## Published version (Claude artifact) constraints
 `dist/mezzanine.html` is published at https://claude.ai/artifact/7AtTkHqGS5GMVLCMonGWzD together with `samples/*.js`. Inside the artifact:
 - File downloads, `window.print`, `alert`/`confirm`/`prompt`, microphone and service workers do not work.
-- `location.hash` only carries bare tokens.
+- Only a bare-token `#fragment` from the artifact's link reaches `location.hash`, and the page cannot change the viewer's address bar. So Copy link there points at the published artifact (`MZ_LINK`, set in `build.mjs`), and only local or hosted copies keep the address in step with the song.
 - Code paths that need any of these must check `window.MZ_ARTIFACT` (set by the build) and hide or adapt the feature.
-- The manifest, home-screen tags and service worker are for local or hosted copies only. Tags placed before `<!-- page:start -->` in `index.html` never reach the artifact; `js/device.js` registers the worker only over http(s) when `MZ_ARTIFACT` is unset.
+- The manifest, home-screen and link-preview tags and the service worker are for local or hosted copies only. Tags placed before `<!-- page:start -->` in `index.html` never reach the artifact; `js/device.js` registers the worker only over http(s) when `MZ_ARTIFACT` is unset.
 
 ## Verify
 - `npm test` must pass. Add tests for new pure logic in `tests/`.

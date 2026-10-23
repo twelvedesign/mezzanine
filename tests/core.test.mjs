@@ -114,6 +114,51 @@ test('bad song codes explain themselves', () => {
   assert.throws(() => M.decodeSong('hello'), /Song codes start with/);
 });
 
+test('song links put the song code in the #fragment', () => {
+  const s = M.generateSong('ab12c', 'lobby');
+  assert.equal(M.songLink('https://claude.ai/artifact/7AtTkHqGS5GMVLCMonGWzD', s), 'https://claude.ai/artifact/7AtTkHqGS5GMVLCMonGWzD#lobby.ab12c');
+  // the page's old fragment is replaced, its query kept
+  assert.equal(M.songLink('http://localhost:8791/index.html?v=2#rain.xyz98', s), 'http://localhost:8791/index.html?v=2#lobby.ab12c');
+});
+
+test('song codes are bare tokens, so links survive the artifact viewer', () => {
+  // The Claude artifact viewer only forwards a #fragment made of letters, digits and . _ ~ -
+  for (const mood of M.MOODS) {
+    const s = M.generateSong('tok' + mood.id, mood.id);
+    assert.match(M.encodeSong(s), /^[A-Za-z0-9._~-]+$/);
+    s.edited = true;
+    s.tempo = 101;
+    s.parts.arp.grid[1][7] = 0.4;
+    const code = M.encodeSong(s);
+    assert.match(code, /^MZ1[A-Za-z0-9._~-]+$/);
+    assert.equal(new URL(M.songLink('https://example.com/', s)).hash, '#' + code, 'the URL parser leaves the code alone');
+  }
+});
+
+test('songs open from a link, a #fragment or a bare code', () => {
+  const plain = M.generateSong('ab12c', 'lobby');
+  assert.deepEqual(M.songFromLink('https://twelvedesign.github.io/mezzanine/#lobby.ab12c'), plain);
+  assert.deepEqual(M.songFromLink('#lobby.ab12c'), plain);
+  assert.deepEqual(M.songFromLink('  lobby.ab12c\n'), plain);
+  assert.deepEqual(M.songFromLink('#lobby%2Eab12c'), plain, 'percent-encoded by a chat app');
+
+  const edited = M.generateSong('ab12c', 'lobby');
+  edited.edited = true;
+  edited.tempo = 61;
+  edited.parts.bass.grid[2][9] = 0.8;
+  const back = M.songFromLink(M.songLink('http://localhost:8791/', edited));
+  assert.equal(back.tempo, 61);
+  assert.ok(back.parts.bass.grid[2][9] > 0.7);
+  assert.equal(back.edited, true);
+});
+
+test('links without a song in them are refused', () => {
+  assert.throws(() => M.songFromLink('#settings'), /Song codes start with/);
+  for (const bad of ['', '#', '#comment-12', 'https://example.com/mezzanine/', '#cellar.ab12c', '#MZ1abc', '#%E0%A4%A']) {
+    assert.throws(() => M.songFromLink(bad), undefined, JSON.stringify(bad));
+  }
+});
+
 test('evolution keeps grids well-formed', () => {
   const s = M.generateSong('evo', 'lobby');
   for (let i = 0; i < 200; i++) {
