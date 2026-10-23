@@ -12,7 +12,7 @@ const headOut = head.replace('<link rel="stylesheet" href="css/style.css">', `<s
 body = body.replace(/<script src="(js\/[\w.]+)"><\/script>/g, (_, src) => `<script>\n${readFileSync(src, 'utf8')}\n</script>`);
 
 mkdirSync('dist', { recursive: true });
-// Song links copied inside the artifact open the published artifact at the song's #code.
-const LINK = 'https://claude.ai/artifact/7AtTkHqGS5GMVLCMonGWzD';
+// Song links copied inside the artifact open the public site, which needs no claude.ai sign-in.
+const LINK = 'https://twelvedesign.github.io/mezzanine/';
 writeFileSync('dist/mezzanine.html', `${headOut.trim()}\n<script>window.MZ_ARTIFACT = true; window.MZ_LINK = '${LINK}';</script>\n${body.trim()}\n`);
 console.log('wrote dist/mezzanine.html');

@@ -600,7 +600,7 @@
   $('#codeOut').addEventListener('blur', renderCode);
   $('#copyBtn').addEventListener('click', () => copy(M.encodeSong(song), 'Code', 'Song code copied.'));
   // Song links open this page on the song. Inside the artifact the frame's own address is private,
-  // so links go to the published artifact (MZ_LINK, set by the build) and arrive as its #fragment.
+  // so links go to MZ_LINK instead, which the build sets to the public site.
   const linkBase = LOCAL ? location.href : window.MZ_LINK;
   if (!linkBase) $('#linkBtn').hidden = true;
   $('#linkBtn').addEventListener('click', () => copy(M.songLink(linkBase, song), 'Link', 'Link to “' + song.title + '” copied.'));

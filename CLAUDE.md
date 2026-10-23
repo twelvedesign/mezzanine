@@ -14,7 +14,7 @@ Generative ambient and elevator music in the browser. See README.md for features
 ## Published version (Claude artifact) constraints
 `dist/mezzanine.html` is published at https://claude.ai/artifact/7AtTkHqGS5GMVLCMonGWzD together with `samples/*.js`. Inside the artifact:
 - File downloads, `window.print`, `alert`/`confirm`/`prompt`, microphone and service workers do not work.
-- Only a bare-token `#fragment` from the artifact's link reaches `location.hash`, and the page cannot change the viewer's address bar. So Copy link there points at the published artifact (`MZ_LINK`, set in `build.mjs`), and only local or hosted copies keep the address in step with the song.
+- Only a bare-token `#fragment` from the artifact's link reaches `location.hash`, and the page cannot change the viewer's address bar. So Copy link there points at the public site (`MZ_LINK`, set in `build.mjs`), which needs no claude.ai sign-in, and only local or hosted copies keep the address in step with the song.
 - Code paths that need any of these must check `window.MZ_ARTIFACT` (set by the build) and hide or adapt the feature.
 - The manifest, home-screen and link-preview tags and the service worker are for local or hosted copies only. Tags placed before `<!-- page:start -->` in `index.html` never reach the artifact; `js/device.js` registers the worker only over http(s) when `MZ_ARTIFACT` is unset.
 
