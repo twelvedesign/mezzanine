@@ -429,11 +429,91 @@
     },
   };
 
+  /* ---------- Loudness metering (ITU-R BS.1770) ---------- */
+  // K-weighting for any sample rate: a +4 dB shelf above about 1.7 kHz, then a high-pass near
+  // 38 Hz. Built from the analog prototypes as libebur128 does; at 48 kHz these are the
+  // coefficients printed in the standard. Two biquads, each { b: [b0, b1, b2], a: [a1, a2] }.
+  M.kWeights = function (sr) {
+    let K = Math.tan((Math.PI * 1681.974450955533) / sr), Q = 0.7071752369554196;
+    const Vh = Math.pow(10, 3.999843853973347 / 20), Vb = Math.pow(Vh, 0.4996667741545416);
+    let a0 = 1 + K / Q + K * K;
+    const shelf = { b: [(Vh + (Vb * K) / Q + K * K) / a0, (2 * (K * K - Vh)) / a0, (Vh - (Vb * K) / Q + K * K) / a0], a: [(2 * (K * K - 1)) / a0, (1 - K / Q + K * K) / a0] };
+    K = Math.tan((Math.PI * 38.13547087602444) / sr); Q = 0.5003270373238773; a0 = 1 + K / Q + K * K;
+    return [shelf, { b: [1, -2, 1], a: [(2 * (K * K - 1)) / a0, (1 - K / Q + K * K) / a0] }];
+  };
+  // Integrated loudness of `channels` (arrays of samples) in LUFS: K-weighted power in 400 ms
+  // blocks every 100 ms, gated at -70 LUFS and then 10 LU below the blocks that passed.
+  // Closer to how loud a mix sounds than plain RMS. -Infinity for silence.
+  M.loudness = function (channels, sr) {
+    const hop = Math.round(sr / 10), hops = new Float64Array(Math.floor(channels[0].length / hop));
+    const [s, h] = M.kWeights(sr);
+    for (const x of channels) {
+      let s1 = 0, s2 = 0, h1 = 0, h2 = 0;
+      for (let j = 0, i = 0; j < hops.length; j++) {
+        let sum = 0;
+        for (const end = i + hop; i < end; i++) {
+          const v = x[i];
+          const y = s.b[0] * v + s1; s1 = s.b[1] * v - s.a[0] * y + s2; s2 = s.b[2] * v - s.a[1] * y;
+          const z = h.b[0] * y + h1; h1 = h.b[1] * y - h.a[0] * z + h2; h2 = h.b[2] * y - h.a[1] * z;
+          sum += z * z;
+        }
+        hops[j] += sum;
+      }
+    }
+    const lufs = (p) => -0.691 + 10 * Math.log10(p);
+    const blocks = [];
+    for (let j = 0; j + 4 <= hops.length; j++) blocks.push((hops[j] + hops[j + 1] + hops[j + 2] + hops[j + 3]) / (4 * hop));
+    const mean = (min) => { let sum = 0, k = 0; for (const p of blocks) if (lufs(p) > min) { sum += p; k++; } return k ? sum / k : 0; };
+    const ungated = mean(-70);
+    return ungated ? lufs(mean(Math.max(-70, lufs(ungated) - 10))) : -Infinity;
+  };
+
+  /* ---------- Master chain: tape, floor trims, output limiter ---------- */
+  // Per-floor mix. `trim` (dB, after the bus compressor) brings each floor to about -16 LUFS at
+  // full volume, so floors match in loudness and peaks keep clear of the limiter. Measured with
+  // tools/mix-check.html (BS.1770 loudness, 6 seeds per floor). `tape` (0..1) is the amount of
+  // wow, flutter and saturation. A song's own fx.tape, when it has one, wins.
+  M.FLOOR_MIX = {
+    night: { trim: -1.3, tape: 0.7 }, lobby: { trim: -2.3 }, cafe: { trim: -1.3 }, rain: { trim: -2.2, tape: 0.5 },
+    focus: { trim: -2.3 }, tea: { trim: -1.3 }, cloud: { trim: -1.7 }, roof: { trim: -1.1 },
+  };
+  M.mixFor = function (song) {
+    const floor = M.FLOOR_MIX[song.mood] || {}, own = song.fx && song.fx.tape;
+    const tape = typeof own === 'number' && isFinite(own) ? own : floor.tape || 0;
+    return { trim: floor.trim || 0, tape: Math.max(0, Math.min(1, tape)) };
+  };
+  // Tape at amount 1: delay-time swings (rate Hz, depth s) for two slow wows and two fast flutters,
+  // at most about ±13 cents together, then tanh saturation mixed in parallel at `wet`.
+  M.TAPE = { delay: 0.005, mod: [[0.53, 0.0012], [0.21, 0.0014], [6.3, 0.000025], [10.7, 0.000008]], drive: 2.5, wet: 0.5, range: 2 };
+  // Output limiter: a fast compressor from `threshold` dB, then a soft ceiling that is unity up to
+  // `knee` and never passes `ceil` (-1 dBFS), for overs up to `range` (+6 dBFS).
+  M.LIMIT = { threshold: -2.5, attack: 0.002, release: 0.25, knee: 0.81, ceil: 0.891, range: 2 };
+
+  // WaveShaper curves. The shaper sees the signal divided by `range`, so the curve covers ±range.
+  M.ceilingCurve = function (knee, ceil, range, n = 4097) {
+    const c = new Float32Array(n), w = ceil - knee;
+    for (let i = 0; i < n; i++) {
+      const x = (range * (2 * i - (n - 1))) / (n - 1), a = Math.abs(x);
+      c[i] = a <= knee ? x : Math.sign(x) * (knee + w * Math.tanh((a - knee) / w));
+    }
+    return c;
+  };
+  M.tapeCurve = function (drive, range, n = 4097) {
+    const c = new Float32Array(n);
+    for (let i = 0; i < n; i++) c[i] = Math.tanh((drive * range * (2 * i - (n - 1))) / (n - 1)) / drive;
+    return c;
+  };
+
   /* ---------- Engine ---------- */
   const SENDS = {
     pad: [0.55, 0.12], keys: [0.32, 0.16], bass: [0.06, 0], arp: [0.45, 0.42],
     melody: [0.42, 0.32], drums: [0.12, 0.02], texture: [0.12, 0],
   };
+  // Reverb early reflections for each ear, [ms, gain]. Irregular gaps keep them from ringing as a flutter.
+  const ER = [
+    [[7.3, 0.9], [12.1, -0.75], [19.7, 0.6], [26.3, -0.55], [33.9, 0.45], [44.6, -0.4], [57.2, 0.3], [69.8, -0.25]],
+    [[8.8, -0.85], [14.4, 0.7], [21.9, -0.6], [29.5, 0.5], [38.2, -0.45], [49.1, 0.35], [61.7, -0.3], [74.3, 0.2]],
+  ];
 
   class Engine {
     constructor() {
@@ -451,16 +531,19 @@
       this.master = ctx.createGain(); this.master.gain.value = 0.75;
       this.fade = ctx.createGain(); this.fade.gain.value = 1;
       this.bus = ctx.createGain();
+      this.tape = this.makeTape();
       this.warm = ctx.createBiquadFilter(); this.warm.type = 'lowpass'; this.warm.Q.value = 0.4;
       this.hpf = ctx.createBiquadFilter(); this.hpf.type = 'highpass'; this.hpf.frequency.value = 28;
       this.comp = ctx.createDynamicsCompressor();
       this.comp.threshold.value = -16; this.comp.ratio.value = 3; this.comp.knee.value = 12;
       this.comp.attack.value = 0.02; this.comp.release.value = 0.4;
+      this.trim = ctx.createGain(); // evens out loudness between floors (FLOOR_MIX)
+      this.limiter = this.makeLimiter();
       this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 1024; this.analyser.smoothingTimeConstant = 0.85;
-      this.bus.connect(this.warm); this.warm.connect(this.hpf); this.hpf.connect(this.comp);
-      this.comp.connect(this.master); this.master.connect(this.fade);
-      this.fade.connect(this.analyser); this.analyser.connect(ctx.destination);
-      try { this.recDest = ctx.createMediaStreamDestination(); this.fade.connect(this.recDest); } catch (e) { this.recDest = null; }
+      this.bus.connect(this.tape.input); this.tape.output.connect(this.warm); this.warm.connect(this.hpf); this.hpf.connect(this.comp);
+      this.comp.connect(this.trim); this.trim.connect(this.master); this.master.connect(this.fade);
+      this.fade.connect(this.limiter.input); this.limiter.output.connect(this.analyser); this.analyser.connect(ctx.destination);
+      try { this.recDest = ctx.createMediaStreamDestination(); this.limiter.output.connect(this.recDest); } catch (e) { this.recDest = null; }
       if (!offlineCtx && this.outWant) this.routeOut(this.outWant);
 
       // reverb
@@ -507,6 +590,43 @@
       if (this.song) { this.applyFx(); this.applyMix(true); }
     }
 
+    // Tape for the lo-fi floors: the mix runs through a short delay whose time drifts (wow) and
+    // trembles (flutter), then a soft saturation mixed in parallel. applyFx sets the amount; at 0
+    // the mix passes unchanged, only 5 ms later.
+    makeTape() {
+      const ctx = this.ctx, T = M.TAPE;
+      const input = ctx.createDelay(0.02); input.delayTime.value = T.delay;
+      const mods = T.mod.map(([rate]) => {
+        const o = osc(ctx, 'sine', rate), g = ctx.createGain(); g.gain.value = 0;
+        o.connect(g); g.connect(input.delayTime); o.start();
+        return g;
+      });
+      const dry = ctx.createGain(), wet = ctx.createGain(), pre = ctx.createGain(), sat = ctx.createWaveShaper(), output = ctx.createGain();
+      wet.gain.value = 0; pre.gain.value = 1 / T.range; sat.curve = M.tapeCurve(T.drive, T.range);
+      input.connect(dry); dry.connect(output);
+      input.connect(pre); pre.connect(sat); sat.connect(wet); wet.connect(output);
+      return { input, output, mods, dry, wet };
+    }
+
+    // Safety limiter after the master and fade gains. A fast compressor holds loud passages near
+    // its threshold, then a soft ceiling bends the few quicker peaks, so the output never passes
+    // -1 dBFS. Below the threshold both leave the mix untouched.
+    makeLimiter() {
+      const ctx = this.ctx, L = M.LIMIT;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = L.threshold; comp.knee.value = 0; comp.ratio.value = 20;
+      comp.attack.value = L.attack; comp.release.value = L.release;
+      // A compressor adds make-up gain of 0.6 times what it would take off a full-scale signal
+      // (Web Audio spec). Take it back, along with the 1/range the ceiling curve expects.
+      const back = ctx.createGain(); back.gain.value = Math.pow(10, (0.6 * L.threshold * (1 - 1 / 20)) / 20) / L.range;
+      const ceil = ctx.createWaveShaper(); ceil.curve = M.ceilingCurve(L.knee, L.ceil, L.range);
+      comp.connect(back); back.connect(ceil);
+      return { input: comp, output: ceil };
+    }
+
+    // A stereo hall: early reflections that reach each ear at different times, then a diffuse tail
+    // that builds up over 4-34 ms and darkens as it decays. The ears share no noise, so it sounds wide.
+    // The convolver normalizes the impulse's power, so the reflections do not make the reverb louder.
     makeIR(sec) {
       const ctx = this.ctx, sr = ctx.sampleRate, L = Math.floor(sr * sec);
       const buf = ctx.createBuffer(2, L, sr);
@@ -517,8 +637,14 @@
           const x = i / L;
           const k = 0.9 - x * 0.75; // high end darkens as the tail decays
           lp += ((Math.random() * 2 - 1) - lp) * k;
-          d[i] = lp * Math.pow(1 - x, 3.4) * (i < sr * 0.012 ? i / (sr * 0.012) : 1);
+          d[i] = lp * Math.pow(1 - x, 3.4) * Math.min(1, Math.max(0, (i / sr - 0.004) / 0.03));
         }
+        // each reflection is a short soft click, later ones duller (spread over more samples); together
+        // they carry about half the energy of the tail's first 80 ms
+        ER[ch].forEach(([ms, g], j) => {
+          const at = Math.round((ms / 1000) * sr), w = Math.round(((2 + j) * sr) / 48000);
+          for (let s = -w; s <= w; s++) d[at + s] += (14 * g * (1 + Math.cos((Math.PI * s) / (w + 1)))) / (w + 1);
+        });
       }
       return buf;
     }
@@ -559,6 +685,11 @@
       const beat = 60 / tempo;
       this.dL.delayTime.setTargetAtTime(beat * 0.75, t, 0.1);
       this.dR.delayTime.setTargetAtTime(beat * 0.75, t, 0.1);
+      const mix = M.mixFor(this.song), tp = this.tape;
+      this.trim.gain.setTargetAtTime(Math.pow(10, mix.trim / 20), t, 0.4);
+      M.TAPE.mod.forEach(([, depth], i) => tp.mods[i].gain.setTargetAtTime(depth * mix.tape, t, 0.6));
+      tp.wet.gain.setTargetAtTime(mix.tape * M.TAPE.wet, t, 0.3);
+      tp.dry.gain.setTargetAtTime(1 - mix.tape * M.TAPE.wet, t, 0.3);
     }
 
     audible(id) {
