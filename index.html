@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- page:start -->
+<title>Mezzanine</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Poiret+One&display=swap">
+<link rel="stylesheet" href="css/style.css">
+<!-- head:end -->
+</head>
+<body>
+<!-- body:start -->
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <span class="mark">Mezzanine</span>
+      <span class="tag">generative ambient &amp; elevator music, built from sequences</span>
+    </div>
+    <div class="top-tools">
+      <div class="timer" id="timerBox">
+        <label for="timerSel">Focus timer</label>
+        <select id="timerSel">
+          <option value="0">Off</option>
+          <option value="15">15 min</option>
+          <option value="25">25 min</option>
+          <option value="50">50 min</option>
+          <option value="90">90 min</option>
+        </select>
+        <span id="timerReadout" class="mono readout">--:--</span>
+        <label class="chk" for="timerFade"><input type="checkbox" id="timerFade" checked> fade out at end</label>
+      </div>
+      <button id="themeBtn" class="icon-btn" type="button" aria-label="Switch light or dark theme" title="Switch theme">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="stage" aria-label="Now playing">
+    <div class="car" id="car">
+      <canvas id="viz" aria-hidden="true"></canvas>
+      <div class="indicator">
+        <div class="floor-led mono" id="floorLed">L</div>
+        <div class="ind-text">
+          <div class="ind-mood" id="indMood">Lobby</div>
+          <div class="ind-song" id="indSong">—</div>
+        </div>
+      </div>
+      <div class="chord-display" aria-live="polite">
+        <div class="chord-name" id="chordName">—</div>
+        <div class="chord-roman mono" id="chordRoman">press play</div>
+      </div>
+      <div class="log mono" id="log" aria-live="polite"></div>
+      <div class="loadline mono" id="loadLine" hidden></div>
+      <div class="car-bottom">
+        <button id="playBtn" class="play" type="button" aria-label="Play">
+          <svg class="i-play" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>
+          <svg class="i-stop" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="6.5" y="6" width="4" height="12" rx="1" fill="currentColor"/><rect x="13.5" y="6" width="4" height="12" rx="1" fill="currentColor"/></svg>
+        </button>
+        <div class="readouts mono">
+          <span id="keyRead">C Major</span>
+          <span id="bpmRead">90 BPM</span>
+          <span id="barRead">BAR 001 · 1</span>
+        </div>
+      </div>
+    </div>
+
+    <aside class="panel" aria-label="Floors">
+      <div class="panel-head">
+        <h2>Floors</h2>
+        <p>Press a floor to choose a mood. Every press writes a fresh song.</p>
+      </div>
+      <div class="floors" id="floors"></div>
+      <button id="newBtn" class="btn brass wide" type="button">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8.5" cy="8.5" r="1.4" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="15.5" cy="8.5" r="1.4" fill="currentColor"/><circle cx="8.5" cy="15.5" r="1.4" fill="currentColor"/></svg>
+        New song on this floor <kbd>N</kbd>
+      </button>
+      <div class="switches">
+        <label class="switch" for="realChk"><input type="checkbox" id="realChk" checked><span class="knob" aria-hidden="true"></span><span><b>Recorded instruments</b><small>Piano, Rhodes, vibraphone, strings and more. Off uses synthesizers.</small></span></label>
+        <label class="switch" for="evolveChk"><input type="checkbox" id="evolveChk" checked><span class="knob" aria-hidden="true"></span><span><b>Evolve</b><small>Patterns, chords and key slowly rewrite themselves</small></span></label>
+        <label class="switch" for="arrangeChk"><input type="checkbox" id="arrangeChk" checked><span class="knob" aria-hidden="true"></span><span><b>Auto-arrange</b><small>Parts rest and return every eight bars</small></span></label>
+      </div>
+      <p class="blurb" id="moodBlurb"></p>
+    </aside>
+  </section>
+
+  <section class="block prog-block" aria-label="Chord progression">
+    <div class="block-head">
+      <h3>Progression</h3>
+      <div class="block-tools">
+        <label for="hrSel" class="mini">Each chord lasts</label>
+        <select id="hrSel"><option value="1">1 bar</option><option value="2">2 bars</option><option value="4">4 bars</option></select>
+        <button id="progDice" class="btn" type="button">Re-roll chords</button>
+      </div>
+    </div>
+    <div class="prog" id="prog"></div>
+    <div class="prog-editor" id="progEditor" hidden>
+      <div class="pe-row"><span class="mini">Chord</span><div class="pe-btns" id="peDegs"></div></div>
+      <div class="pe-row"><span class="mini">Colour</span><div class="pe-btns" id="peExts"></div></div>
+      <div class="pe-row"><span class="mini"></span><div class="pe-btns">
+        <button class="btn" type="button" id="peAdd">Add a chord after</button>
+        <button class="btn" type="button" id="peDel">Remove this chord</button>
+        <button class="btn ghost" type="button" id="peClose">Done</button>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="block mixer" aria-label="Global controls">
+    <div class="ctl">
+      <label for="keySel">Key</label>
+      <select id="keySel"></select>
+    </div>
+    <div class="ctl">
+      <label for="modeSel">Mode</label>
+      <select id="modeSel"></select>
+    </div>
+    <div class="ctl range">
+      <label for="tempo">Tempo <output id="tempoOut" class="mono">90</output></label>
+      <input type="range" id="tempo" min="48" max="126" step="1">
+    </div>
+    <div class="ctl range">
+      <label for="swing">Swing <output id="swingOut" class="mono">0</output></label>
+      <input type="range" id="swing" min="0" max="0.3" step="0.01">
+    </div>
+    <div class="ctl range">
+      <label for="space">Space <output id="spaceOut" class="mono">0</output></label>
+      <input type="range" id="space" min="0" max="1" step="0.01">
+    </div>
+    <div class="ctl range">
+      <label for="echo">Echo <output id="echoOut" class="mono">0</output></label>
+      <input type="range" id="echo" min="0" max="1" step="0.01">
+    </div>
+    <div class="ctl range">
+      <label for="warmth">Brightness <output id="warmthOut" class="mono">0</output></label>
+      <input type="range" id="warmth" min="0" max="1" step="0.01">
+    </div>
+    <div class="ctl range">
+      <label for="volume">Volume <output id="volumeOut" class="mono">0</output></label>
+      <input type="range" id="volume" min="0" max="1" step="0.01">
+    </div>
+    <label class="chk ctl-chk" for="pentaChk"><input type="checkbox" id="pentaChk"> Pentatonic melody</label>
+  </section>
+
+  <section class="block rack-block" aria-label="Sequencer">
+    <div class="block-head">
+      <h3>Sequencer</h3>
+      <p class="hint">Click or drag on a grid to draw notes. Rows follow the chords, so every note stays in key.</p>
+    </div>
+    <div class="rack" id="rack"></div>
+  </section>
+
+  <section class="block library" aria-label="Save and share">
+    <div class="lib-col">
+      <h3>Song code</h3>
+      <p class="hint">Copy this code to keep or share the song exactly as it is now.</p>
+      <div class="code-row">
+        <input id="codeOut" class="mono" readonly aria-label="Song code">
+        <button id="copyBtn" class="btn" type="button">Copy</button>
+      </div>
+      <div class="code-row">
+        <input id="codeIn" class="mono" placeholder="Paste a song code" aria-label="Paste a song code">
+        <button id="loadBtn" class="btn" type="button">Load</button>
+      </div>
+      <p class="msg" id="codeMsg"></p>
+    </div>
+    <div class="lib-col">
+      <h3>Shelf</h3>
+      <p class="hint">Songs you keep are stored in this browser.</p>
+      <div class="code-row">
+        <button id="saveBtn" class="btn brass" type="button">Keep this song</button>
+        <button id="recBtn" class="btn" type="button" data-local-only>Record audio</button>
+      </div>
+      <ul class="shelf" id="shelf"></ul>
+    </div>
+  </section>
+
+  <footer class="foot mono">
+    <span><kbd>Space</kbd> play / stop</span>
+    <span><kbd>N</kbd> new song</span>
+    <span><kbd>←</kbd><kbd>→</kbd> change floor</span>
+    <span><kbd>E</kbd> evolve</span>
+    <span><kbd>A</kbd> auto-arrange</span>
+    <span><kbd>1</kbd>–<kbd>7</kbd> mute a part</span>
+    <span class="credit">Recorded instruments: Musyng Kite soundfont (CC BY-SA 3.0), prepared by midi-js-soundfonts</span>
+  </footer>
+</div>
+<script src="js/core.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/ui.js"></script>
+<!-- body:end -->
+</body>
+</html>
