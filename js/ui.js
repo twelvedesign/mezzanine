@@ -88,9 +88,6 @@
       $('#chordRoman').textContent = 'press play';
     }
     document.title = 'Mezzanine';
-    if ('mediaSession' in navigator) {
-      try { navigator.mediaSession.metadata = new MediaMetadata({ title: song.title, artist: 'Mezzanine · ' + mood.name }); } catch (e) {}
-    }
   }
 
   function renderProg() {
@@ -360,7 +357,6 @@
     $('#playBtn').setAttribute('aria-label', on ? 'Stop' : 'Play');
     $('#rack').classList.toggle('playing', on);
     if (!on) { document.querySelectorAll('.chip.now').forEach((c) => c.classList.remove('now')); renderInfo(); }
-    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = on ? 'playing' : 'paused';
   });
   engine.on('song', (s) => {
     if (s !== song) return;
@@ -717,13 +713,8 @@
     else if (k === 'a' || k === 'A') { const c = $('#arrangeChk'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); flash('auto-arrange ' + (c.checked ? 'on' : 'off')); }
     else if (/^[1-7]$/.test(k)) toggleMute(M.PARTS[+k - 1].id);
   });
-  if ('mediaSession' in navigator) {
-    try {
-      navigator.mediaSession.setActionHandler('play', () => !engine.playing && togglePlay());
-      navigator.mediaSession.setActionHandler('pause', () => engine.playing && togglePlay());
-      navigator.mediaSession.setActionHandler('nexttrack', () => newSong());
-    } catch (e) {}
-  }
+  // Transport for js/device.js (lock-screen controls)
+  M.ui = { togglePlay, newSong, loadSong, song: () => song };
 
   /* ---------- Boot ---------- */
   const theme = store.get('theme', null);

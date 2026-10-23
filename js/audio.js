@@ -456,6 +456,7 @@
       this.comp.connect(this.master); this.master.connect(this.fade);
       this.fade.connect(this.analyser); this.analyser.connect(ctx.destination);
       try { this.recDest = ctx.createMediaStreamDestination(); this.fade.connect(this.recDest); } catch (e) { this.recDest = null; }
+      if (!offlineCtx && this.outWant) this.routeOut(this.outWant);
 
       // reverb
       this.revIn = ctx.createGain();
@@ -595,6 +596,9 @@
 
     async start() {
       this.init();
+      if (this.outWant && !this.outEl) this.routeOut(this.outWant);
+      // play() must run inside the user's gesture, so before the first await
+      if (this.outEl) this.outEl.play().catch((e) => { if (!e || e.name !== 'AbortError') this.directOut(); });
       if (this.ctx.state !== 'running') await this.ctx.resume();
       if (this.playing) return;
       this.playing = true;
@@ -615,7 +619,30 @@
       this.fade.gain.setTargetAtTime(0, t, fadeSec / 3);
       if (this.pending) { const s = this.pending; this.pending = null; this.setSong(s); }
       this.events = [];
+      if (this.outEl) { const el = this.outEl; setTimeout(() => { if (!this.playing && this.outEl === el) el.pause(); }, fadeSec * 1000 + 250); }
       this.emit('play', false);
+    }
+
+    // Phones: send the mix through an <audio> element (srcObject) instead of ctx.destination.
+    // Media playback then owns the audio session, so the music ignores the silent switch, keeps
+    // going with the screen locked and gets lock-screen controls. Only one route is live at a time.
+    useMediaElement(el) {
+      this.outWant = el;
+      if (this.ctx && !this.outEl) this.routeOut(el);
+    }
+    routeOut(el) {
+      if (!this.recDest || !('srcObject' in el)) return;
+      try { el.srcObject = this.recDest.stream; } catch (e) { return; }
+      this.analyser.disconnect();
+      this.outEl = el;
+    }
+    // Falls back to direct output (the element could not play); start() tries the element again.
+    directOut() {
+      const el = this.outEl;
+      if (!el) return;
+      this.outEl = null;
+      el.pause(); el.srcObject = null;
+      this.analyser.connect(this.ctx.destination);
     }
 
     stepDur(n) {

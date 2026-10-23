@@ -36,6 +36,12 @@ Then visit http://localhost:8791.
   - Ambience beds: rain, vinyl, ocean, wind and crickets.
   - Reverb and ping-pong echo.
 - **Study tools:** a focus timer with a chime and fade-out, song codes for sharing, a shelf of kept songs, and audio recording (local copy only).
+- **Phones and background tabs:**
+  - On touch devices the music plays through a hidden `<audio>` element, so it ignores the silent switch and keeps going with the screen locked.
+  - Lock-screen and media-key controls: play, pause, next song on this floor, and previous song.
+  - Cover art is drawn from the floor's colours and the song title.
+  - Below 600px wide, the chords, mixer and sequencer fold away behind a Studio button.
+- **Installable offline app (local or hosted copies):** add it to your home screen. After the first visit, a service worker keeps it and its instruments working offline.
 
 ## Project layout
 
@@ -46,6 +52,8 @@ Then visit http://localhost:8791.
 | `js/core.js` | Seeded random numbers, music theory, floors, pattern generators, song codes. No audio and no DOM. |
 | `js/audio.js` | Voice presets, sampler, synths, drum kit, ambience beds, effects and the step scheduler (`M.Engine`). |
 | `js/ui.js` | Interface, visualizer, Evolve and Auto-arrange logic, timer, shelf, keyboard shortcuts. |
+| `js/device.js` | Phone and background listening: media-element output, resuming after interruptions, Media Session, the Studio disclosure, service worker registration. |
+| `sw.js`, `manifest.webmanifest`, `icons/` | Offline app for local or hosted copies. Rebuild the icons with `node tools/make-icons.mjs`. |
 | `samples/*.js` | Packed instrument samples (base64 MP3s, one note every minor third). |
 | `tools/pack-samples.mjs` | Rebuilds `samples/` from MIDI.js soundfont files. |
 | `build.mjs` | Inlines everything into `dist/mezzanine.html` for publishing as a Claude artifact. |
