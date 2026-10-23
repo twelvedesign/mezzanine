@@ -82,7 +82,9 @@
     emit() { this.listeners.forEach((fn) => fn(this.progress())); },
     progress() {
       const ids = Object.keys(this.state);
-      return { total: ids.length, ready: ids.filter((i) => this.state[i] === 'ready' || this.state[i] === 'error').length, failed: ids.filter((i) => this.state[i] === 'error') };
+      // a downloaded file counts as loaded: it is decoded the moment Play unlocks audio
+      const done = (st) => st === 'ready' || st === 'error' || st === 'fetched' || st === 'decoding';
+      return { total: ids.length, ready: ids.filter((i) => done(this.state[i])).length, failed: ids.filter((i) => this.state[i] === 'error') };
     },
     ensure(id) {
       if (this.state[id]) return;
@@ -98,6 +100,7 @@
     },
     fetched(id) {
       this.state[id] = 'fetched';
+      this.emit();
       if (this.ctx) this.decode(id);
     },
     attach(ctx) {
