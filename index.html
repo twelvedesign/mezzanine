@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Home-screen app tags (local or hosted copies; the artifact build keeps only what follows page:start) -->
+<meta name="theme-color" content="#0c1416">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mezzanine">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <!-- page:start -->
 <title>Mezzanine</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -31,7 +39,7 @@
           <option value="90">90 min</option>
         </select>
         <span id="timerReadout" class="mono readout">--:--</span>
-        <label class="chk" for="timerFade"><input type="checkbox" id="timerFade" checked> fade out at end</label>
+        <label class="chk" for="timerFade"><input type="checkbox" id="timerFade" checked> fade<span class="long"> out at end</span></label>
       </div>
       <button id="themeBtn" class="icon-btn" type="button" aria-label="Switch light or dark theme" title="Switch theme">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg>
@@ -87,6 +95,11 @@
     </aside>
   </section>
 
+  <button id="studioBtn" class="studio-toggle" type="button" aria-expanded="false" aria-controls="studio">
+    <span><b>Studio</b><small>Chords, mixer and sequencer</small></span>
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 9.5l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <div class="studio" id="studio">
   <section class="block prog-block" aria-label="Chord progression">
     <div class="block-head">
       <h3>Progression</h3>
@@ -151,6 +164,7 @@
     </div>
     <div class="rack" id="rack"></div>
   </section>
+  </div>
 
   <section class="block library" aria-label="Save and share">
     <div class="lib-col">
@@ -190,6 +204,7 @@
 <script src="js/core.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/device.js"></script>
 <!-- body:end -->
 </body>
 </html>
