@@ -5,42 +5,42 @@
   /* ---------- Voice presets ---------- */
   M.VOICES = {
     // pads
-    velvet:   { label: 'Velvet Pad',    kind: 'pad', oscs: [['sawtooth', -9, 0, 1], ['sawtooth', 9, 0, 1], ['triangle', 0, -12, 0.8]], cutoff: 1100, q: 0.7, a: 1.2, r: 2.8, gain: 0.05 },
-    glass:    { label: 'Glass Pad',     kind: 'pad', oscs: [['triangle', -5, 0, 1], ['sine', 4, 12, 0.5], ['triangle', 0, -12, 0.6]], cutoff: 3200, q: 0.3, a: 1.6, r: 3.6, gain: 0.09 },
-    choir:    { label: 'Synth Choir',     kind: 'pad', oscs: [['sawtooth', -6, 0, 1], ['sawtooth', 7, 0, 1]], formant: true, cutoff: 2400, q: 0.5, a: 1.8, r: 3.5, gain: 0.07 },
-    strings:  { label: 'Synth Strings',  kind: 'pad', oscs: [['sawtooth', -12, 0, 1], ['sawtooth', 12, 0, 1], ['sawtooth', 3, 12, 0.35]], cutoff: 1900, q: 0.4, a: 0.7, r: 2.2, gain: 0.05, vib: 5 },
+    velvet:   { label: 'Velvet Pad',    kind: 'pad', oscs: [['sawtooth', -9, 0, 1], ['sawtooth', 9, 0, 1], ['triangle', 0, -12, 0.8]], cutoff: 1100, q: 0.7, a: 1.2, r: 2.8, gain: 0.05, range: [36, 84] },
+    glass:    { label: 'Glass Pad',     kind: 'pad', oscs: [['triangle', -5, 0, 1], ['sine', 4, 12, 0.5], ['triangle', 0, -12, 0.6]], cutoff: 3200, q: 0.3, a: 1.6, r: 3.6, gain: 0.09, range: [36, 88] },
+    choir:    { label: 'Synth Choir',     kind: 'pad', oscs: [['sawtooth', -6, 0, 1], ['sawtooth', 7, 0, 1]], formant: true, cutoff: 2400, q: 0.5, a: 1.8, r: 3.5, gain: 0.07, range: [40, 84] },
+    strings:  { label: 'Synth Strings',  kind: 'pad', oscs: [['sawtooth', -12, 0, 1], ['sawtooth', 12, 0, 1], ['sawtooth', 3, 12, 0.35]], cutoff: 1900, q: 0.4, a: 0.7, r: 2.2, gain: 0.05, vib: 5, range: [36, 88] },
     // mallets, keys, plucks
-    epiano:   { label: 'FM Electric Piano', kind: 'fm', ratio: 1, index: 1.6, idecay: 0.5, tine: 0.5, a: 0.004, d: 2.4, r: 0.45, gain: 0.16, trem: [3.8, 0.18] },
-    vibes:    { label: 'FM Vibes',    kind: 'fm', ratio: 4, index: 0.55, idecay: 0.25, a: 0.002, d: 3.2, r: 0.8, ring: true, gain: 0.15, trem: [5.2, 0.35] },
-    bell:     { label: 'FM Bell',          kind: 'fm', ratio: 3.5, index: 2.2, idecay: 1.1, a: 0.002, d: 4, r: 2, ring: true, gain: 0.12 },
-    glassbell:{ label: 'Glass Bell',    kind: 'fm', ratio: 2.76, index: 1.1, idecay: 0.8, a: 0.003, d: 3.5, r: 2, ring: true, gain: 0.11, oct: 1 },
-    marimba:  { label: 'Synth Marimba',       kind: 'fm', ratio: 4, index: 2.4, idecay: 0.035, a: 0.002, d: 0.6, r: 0.25, ring: true, gain: 0.22 },
-    kalimba:  { label: 'Synth Kalimba',       kind: 'fm', ratio: 5.4, index: 1.4, idecay: 0.05, a: 0.002, d: 1.3, r: 0.4, ring: true, gain: 0.17 },
-    harp:     { label: 'Synth Harp',          kind: 'pluck', wave: 'triangle', cutoff: 4200, fdecay: 0.45, d: 1.8, gain: 0.2 },
-    pluck:    { label: 'Soft Pluck',    kind: 'pluck', wave: 'sawtooth', cutoff: 2300, fdecay: 0.14, d: 1.0, gain: 0.09 },
-    organ:    { label: 'Lounge Organ',  kind: 'organ', bars: [1, 0.5, 0.32, 0.14], a: 0.03, r: 0.25, gain: 0.045 },
+    epiano:   { label: 'FM Electric Piano', kind: 'fm', ratio: 1, index: 1.6, idecay: 0.5, tine: 0.5, a: 0.004, d: 2.4, r: 0.45, gain: 0.16, trem: [3.8, 0.18], range: [33, 96] },
+    vibes:    { label: 'FM Vibes',    kind: 'fm', ratio: 4, index: 0.55, idecay: 0.25, a: 0.002, d: 3.2, r: 0.8, ring: true, gain: 0.15, trem: [5.2, 0.35], range: [48, 92] },
+    bell:     { label: 'FM Bell',          kind: 'fm', ratio: 3.5, index: 2.2, idecay: 1.1, a: 0.002, d: 4, r: 2, ring: true, gain: 0.12, range: [48, 96] },
+    glassbell:{ label: 'Glass Bell',    kind: 'fm', ratio: 2.76, index: 1.1, idecay: 0.8, a: 0.003, d: 3.5, r: 2, ring: true, gain: 0.11, oct: 1, range: [48, 86] },
+    marimba:  { label: 'Synth Marimba',       kind: 'fm', ratio: 4, index: 2.4, idecay: 0.035, a: 0.002, d: 0.6, r: 0.25, ring: true, gain: 0.22, range: [45, 96] },
+    kalimba:  { label: 'Synth Kalimba',       kind: 'fm', ratio: 5.4, index: 1.4, idecay: 0.05, a: 0.002, d: 1.3, r: 0.4, ring: true, gain: 0.17, range: [55, 98] },
+    harp:     { label: 'Synth Harp',          kind: 'pluck', wave: 'triangle', cutoff: 4200, fdecay: 0.45, d: 1.8, gain: 0.2, range: [36, 96] },
+    pluck:    { label: 'Soft Pluck',    kind: 'pluck', wave: 'sawtooth', cutoff: 2300, fdecay: 0.14, d: 1.0, gain: 0.09, range: [40, 88] },
+    organ:    { label: 'Lounge Organ',  kind: 'organ', bars: [1, 0.5, 0.32, 0.14], a: 0.03, r: 0.25, gain: 0.045, range: [36, 91] },
     // leads
-    flute:    { label: 'Synth Flute',         kind: 'lead', wave: 'sine', breath: 0.05, vib: [5, 11, 0.25], a: 0.07, r: 0.35, cutoff: 3200, gain: 0.2 },
-    softlead: { label: 'Soft Lead',     kind: 'lead', wave: 'triangle', vib: [4.4, 8, 0.3], a: 0.04, r: 0.45, cutoff: 1700, gain: 0.21 },
+    flute:    { label: 'Synth Flute',         kind: 'lead', wave: 'sine', breath: 0.05, vib: [5, 11, 0.25], a: 0.07, r: 0.35, cutoff: 3200, gain: 0.2, range: [58, 96] },
+    softlead: { label: 'Soft Lead',     kind: 'lead', wave: 'triangle', vib: [4.4, 8, 0.3], a: 0.04, r: 0.45, cutoff: 1700, gain: 0.21, range: [48, 88] },
     // basses
-    upright:  { label: 'Synth Upright',       kind: 'bass', wave: 'triangle', sub: 0.7, cutoff: 700, fenv: 900, fdecay: 0.1, a: 0.006, d: 1.1, s: 0.18, r: 0.12, gain: 0.21 },
-    round:    { label: 'Round Bass',    kind: 'bass', wave: 'triangle', sub: 0.4, cutoff: 600, fenv: 300, fdecay: 0.3, a: 0.02, d: 1.6, s: 0.45, r: 0.3, gain: 0.19 },
-    sub:      { label: 'Sub Bass',      kind: 'bass', wave: 'sine', sub: 0, cutoff: 420, fenv: 0, fdecay: 0.3, a: 0.08, d: 3, s: 0.75, r: 0.6, gain: 0.2 },
+    upright:  { label: 'Synth Upright',       kind: 'bass', wave: 'triangle', sub: 0.7, cutoff: 700, fenv: 900, fdecay: 0.1, a: 0.006, d: 1.1, s: 0.18, r: 0.12, gain: 0.21, range: [26, 60] },
+    round:    { label: 'Round Bass',    kind: 'bass', wave: 'triangle', sub: 0.4, cutoff: 600, fenv: 300, fdecay: 0.3, a: 0.02, d: 1.6, s: 0.45, r: 0.3, gain: 0.19, range: [26, 62] },
+    sub:      { label: 'Sub Bass',      kind: 'bass', wave: 'sine', sub: 0, cutoff: 420, fenv: 0, fdecay: 0.3, a: 0.08, d: 3, s: 0.75, r: 0.6, gain: 0.2, range: [24, 55] },
     // recorded instruments (Musyng Kite soundfont); `fb` plays while samples load
-    grand:     { label: 'Grand Piano',     kind: 'sample', inst: 'grand', fb: 'epiano', r: 0.4, gain: 5.5 },
-    rhodes:    { label: 'Rhodes',          kind: 'sample', inst: 'rhodes', fb: 'epiano', r: 0.35, gain: 2.2, trem: [3.6, 0.16] },
-    vibraphone:{ label: 'Vibraphone',      kind: 'sample', inst: 'vibraphone', fb: 'vibes', ring: true, gain: 2.9, trem: [5, 0.22] },
-    marimba_s: { label: 'Marimba',         kind: 'sample', inst: 'marimba_s', fb: 'marimba', ring: true, gain: 1.6 },
-    kalimba_s: { label: 'Kalimba',         kind: 'sample', inst: 'kalimba_s', fb: 'kalimba', ring: true, gain: 5.4 },
-    celesta:   { label: 'Celesta',         kind: 'sample', inst: 'celesta', fb: 'glassbell', ring: true, gain: 2.9 },
-    harp_s:    { label: 'Concert Harp',    kind: 'sample', inst: 'harp_s', fb: 'harp', ring: true, gain: 3.8 },
-    nylon:     { label: 'Nylon Guitar',    kind: 'sample', inst: 'nylon', fb: 'harp', r: 0.5, gain: 5.2 },
-    flute_s:   { label: 'Flute',           kind: 'sample', inst: 'flute_s', fb: 'flute', sustain: true, a: 0.03, r: 0.3, gain: 6 },
-    sax:       { label: 'Alto Sax',        kind: 'sample', inst: 'sax', fb: 'softlead', sustain: true, a: 0.03, r: 0.25, gain: 3.5 },
-    strings_s: { label: 'String Section',  kind: 'sample', inst: 'strings_s', fb: 'strings', sustain: true, a: 0.5, r: 1.8, gain: 0.8 },
-    choir_s:   { label: 'Choir',           kind: 'sample', inst: 'choir_s', fb: 'choir', sustain: true, a: 0.7, r: 2.2, gain: 1.6 },
-    acbass:    { label: 'Upright Bass',    kind: 'sample', inst: 'acbass', fb: 'upright', r: 0.12, gain: 4 },
-    fretless:  { label: 'Fretless Bass',   kind: 'sample', inst: 'fretless', fb: 'round', r: 0.2, gain: 4.2 },
+    grand:     { label: 'Grand Piano',     kind: 'sample', inst: 'grand', fb: 'epiano', r: 0.4, gain: 5.5, range: [33, 98] },
+    rhodes:    { label: 'Rhodes',          kind: 'sample', inst: 'rhodes', fb: 'epiano', r: 0.35, gain: 2.2, trem: [3.6, 0.16], range: [38, 94] },
+    vibraphone:{ label: 'Vibraphone',      kind: 'sample', inst: 'vibraphone', fb: 'vibes', ring: true, gain: 2.9, trem: [5, 0.22], range: [48, 92] },
+    marimba_s: { label: 'Marimba',         kind: 'sample', inst: 'marimba_s', fb: 'marimba', ring: true, gain: 1.6, range: [45, 96] },
+    kalimba_s: { label: 'Kalimba',         kind: 'sample', inst: 'kalimba_s', fb: 'kalimba', ring: true, gain: 5.4, range: [55, 98] },
+    celesta:   { label: 'Celesta',         kind: 'sample', inst: 'celesta', fb: 'glassbell', ring: true, gain: 2.9, range: [55, 98] },
+    harp_s:    { label: 'Concert Harp',    kind: 'sample', inst: 'harp_s', fb: 'harp', ring: true, gain: 3.8, range: [36, 96] },
+    nylon:     { label: 'Nylon Guitar',    kind: 'sample', inst: 'nylon', fb: 'harp', r: 0.5, gain: 5.2, range: [40, 83] },
+    flute_s:   { label: 'Flute',           kind: 'sample', inst: 'flute_s', fb: 'flute', sustain: true, a: 0.03, r: 0.3, gain: 6, range: [60, 93] },
+    sax:       { label: 'Alto Sax',        kind: 'sample', inst: 'sax', fb: 'softlead', sustain: true, a: 0.03, r: 0.25, gain: 3.5, range: [49, 81] },
+    strings_s: { label: 'String Section',  kind: 'sample', inst: 'strings_s', fb: 'strings', sustain: true, a: 0.5, r: 1.8, gain: 0.8, range: [40, 84] },
+    choir_s:   { label: 'Choir',           kind: 'sample', inst: 'choir_s', fb: 'choir', sustain: true, a: 0.7, r: 2.2, gain: 1.6, range: [45, 79] },
+    acbass:    { label: 'Upright Bass',    kind: 'sample', inst: 'acbass', fb: 'upright', r: 0.12, gain: 4, range: [28, 60] },
+    fretless:  { label: 'Fretless Bass',   kind: 'sample', inst: 'fretless', fb: 'round', r: 0.2, gain: 4.2, range: [28, 62] },
     kit:      { label: 'Soft Kit' },
     // ambience beds
     rain:     { label: 'Rain' }, vinyl: { label: 'Vinyl' }, ocean: { label: 'Ocean' }, wind: { label: 'Wind' }, crickets: { label: 'Crickets' }, none: { label: 'Silence' },
@@ -182,6 +182,7 @@
   M.playVoice = function (ctx, out, name, midi, t, dur, vel) {
     const p = M.VOICES[name];
     if (!p || !p.kind) return;
+    midi = M.foldInto(midi, p.range);
     if (p.kind === 'sample') return playSample(ctx, out, p, midi, t, dur, vel);
     if (p.oct) midi += 12 * p.oct;
     const f = M.midiFreq(midi);
@@ -520,12 +521,29 @@
     setSong(song, { atBar = false } = {}) {
       if (atBar && this.playing) { this.pending = song; M.preloadSong(song); return; }
       this.song = song;
-      this.chords = M.buildChords(song);
+      this.chords = M.buildChords(song); this.shifts = {};
       M.preloadSong(song);
       if (this.ctx) { this.applyFx(); this.applyMix(); this.setBed(); }
       this.emit('song', song);
     }
-    rebuild() { this.chords = M.buildChords(this.song); this.emit('chords', this.chords); }
+    rebuild() { this.chords = M.buildChords(this.song); this.shifts = {}; this.emit('chords', this.chords); }
+
+    // Octave shift that moves a part into its instrument's range, from every note it could play.
+    regShift(id, voice) {
+      const range = (M.VOICES[voice] || {}).range, song = this.song;
+      const key = id + ':' + voice + ':' + song.penta;
+      if (this.shifts[key] === undefined) {
+        const pool = [];
+        for (const c of this.chords) {
+          if (id === 'melody') for (let row = 0; row < 12; row++) pool.push(M.melodyMidi(song, c, row));
+          else if (id === 'pad') pool.push(...c.pad, ...c.padSplit);
+          else if (id === 'keys') pool.push(...c.keys, ...c.keysSplit);
+          else pool.push(...c[id]);
+        }
+        this.shifts[key] = M.rangeShift(pool, range);
+      }
+      return this.shifts[key];
+    }
 
     applyFx() {
       if (!this.ctx) return;
@@ -598,7 +616,7 @@
       if (this.ctx.state !== 'running') await this.ctx.resume();
       if (this.playing) return;
       this.playing = true;
-      this.n = 0;
+      this.n = 0; this.padHeld = null;
       this.next = this.ctx.currentTime + 0.12;
       this.fade.gain.cancelScheduledValues(this.ctx.currentTime);
       this.fade.gain.setTargetAtTime(1, this.ctx.currentTime, 0.05);
@@ -614,7 +632,7 @@
       this.fade.gain.cancelScheduledValues(t);
       this.fade.gain.setTargetAtTime(0, t, fadeSec / 3);
       if (this.pending) { const s = this.pending; this.pending = null; this.setSong(s); }
-      this.events = [];
+      this.events = []; this.padHeld = null;
       this.emit('play', false);
     }
 
@@ -642,6 +660,16 @@
       }
       return cap;
     }
+    // The last bar of every 8 plays a fill (unless Vary is at zero, which keeps the pattern exact).
+    drumGrid(part, bar) {
+      if (bar % 8 !== 7 || !part.vary) return part.grid;
+      const f = this.fill;
+      if (!f || f.bar !== bar || f.src !== part.grid) {
+        const style = (M.MOOD[this.song.mood] || M.MOODS[0]).styles.drums[0];
+        this.fill = { bar, src: part.grid, grid: M.drumFill(part.grid, style, M.rng(this.song.seed + ':fill:' + bar)) };
+      }
+      return this.fill.grid;
+    }
     span(n, steps) { let d = 0; for (let k = 0; k < steps; k++) d += this.stepDur(n + k); return d; }
 
     schedule(n, t) {
@@ -660,6 +688,8 @@
       }
       const visual = !document.hidden;
       if (visual) this.events.push({ t, type: 'step', n });
+      // pad and keys share out the register while both are sounding
+      const split = ['pad', 'keys'].every((id) => this.audible(id) && this.arr[id] !== 0);
 
       for (const meta of M.PARTS) {
         const id = meta.id, part = song.parts[id];
@@ -669,8 +699,9 @@
         const out = this.parts[id].input;
         const vary = part.vary;
         const r = Math.random;
+        const grid = id === 'drums' ? this.drumGrid(part, bar) : part.grid;
         for (let row = 0; row < meta.rows; row++) {
-          let v = part.grid[row][step];
+          let v = grid[row][step];
           if (!v) {
             // Vary can add a ghost hat or shaker
             if (id === 'drums' && row >= 3 && step % 2 === 1 && r() < vary * 0.18) v = 0.18 + r() * 0.12;
@@ -686,8 +717,14 @@
             if (visual) this.events.push({ t: tt, type: 'note', part: id, row, step, midi: 40 + row * 10, v });
             continue;
           }
-          if (id === 'pad') { notes = chord.pad; gapSteps = this.gap(part.grid, 16, step, 16 * song.hr); }
-          else if (id === 'keys') { notes = chord.keys; gapSteps = Math.min(8, this.gap(part.grid, 16, step, 16)) * 0.9; }
+          if (id === 'pad') {
+            notes = split ? chord.padSplit : chord.pad;
+            const hold = M.padHold(part.grid, n, song.hr, this.chords), held = this.padHeld;
+            // a tie lets the sounding chord ring on, unless nothing (or a different voicing) is sounding
+            if (hold.tie && held && held.until > t + 0.05 && held.notes === notes.join()) continue;
+            gapSteps = hold.steps;
+          }
+          else if (id === 'keys') { notes = split ? chord.keysSplit : chord.keys; gapSteps = Math.min(8, this.gap(part.grid, 16, step, 16)) * 0.9; }
           else if (id === 'bass') {
             let m = chord.bass[row === 3 ? 3 : row === 4 ? 4 : row === 2 ? 2 : row === 1 ? 1 : 0];
             notes = [m]; gapSteps = this.gap(part.grid, 16, step, 16) * 0.92;
@@ -701,6 +738,9 @@
             notes = [M.melodyMidi(song, chord, rr)]; gapSteps = Math.min(12, this.gap(part.grid, 32, step, 12)) * 0.95;
           }
           const dur = this.span(n, Math.max(1, Math.ceil(gapSteps))) * (gapSteps / Math.max(1, Math.ceil(gapSteps)));
+          if (id === 'pad') this.padHeld = { until: tt + dur, notes: notes.join() };
+          const sh = this.regShift(id, part.voice), range = (M.VOICES[part.voice] || {}).range;
+          notes = notes.map((m) => M.foldInto(m + sh, range));
           notes.forEach((m, i) => {
             const st = id === 'keys' ? tt + i * 0.006 : tt; // a soft strum
             M.playVoice(ctx, out, part.voice, m, st, dur, v);

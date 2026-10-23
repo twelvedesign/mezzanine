@@ -100,7 +100,11 @@
   };
 
   // Place pitch classes inside [lo,hi], choosing the arrangement closest to the previous voicing.
-  M.voiceChord = function (pcs, prev, lo, hi) {
+  // Options: span (widest voicing), open (root at the bottom, no seconds, a wide lowest
+  // interval) and avoid (notes of another part to keep clear of).
+  M.voiceChord = function (pcs, prev, lo, hi, o) {
+    o = o || {};
+    const span = o.span || 19;
     const opts = pcs.map((pc) => {
       const a = [];
       for (let m = lo; m <= hi; m++) if (mod(m, 12) === mod(pc, 12)) a.push(m);
@@ -112,11 +116,17 @@
     (function rec(i) {
       if (i === opts.length) {
         const s = cur.slice().sort((a, b) => a - b);
-        if (s[s.length - 1] - s[0] > 19) return;
+        if (s[s.length - 1] - s[0] > span) return;
+        if (o.open && mod(s[0] - pcs[0], 12)) return;
         let score = 0;
         for (let k = 1; k < s.length; k++) {
           if (s[k] === s[k - 1]) score += 100;
           if (s[k] - s[k - 1] <= 2 && s[k - 1] < 58) score += 4;
+          if (o.open && s[k] - s[k - 1] <= 2) score += 8;
+        }
+        if (o.open && s[1] - s[0] < 7) score += 5;
+        if (o.avoid) {
+          for (const n of s) for (const a of o.avoid) { const d = Math.abs(n - a); if (d === 0) score += 3; else if (d <= 2) score += 5; }
         }
         if (prev && prev.length) {
           for (const n of s) {
@@ -137,7 +147,7 @@
   // Everything the engine needs to play one chord of the progression.
   M.buildChords = function (song) {
     const { key, mode, prog } = song;
-    let prevPad = null, prevKeys = null;
+    let prevPad = null, prevKeys = null, prevPadS = null, prevKeysS = null;
     const chords = prog.map((c) => ({ c }));
     // two passes so the first chord voice-leads from the last one (the loop is seamless)
     for (let pass = 0; pass < 2; pass++) {
@@ -148,7 +158,12 @@
         const keyPcs = pcs.length >= 4 ? pcs.slice(1) : pcs; // rootless when it is rich enough
         ch.pad = M.voiceChord(pcs, prevPad, 50, 74);
         ch.keys = M.voiceChord(keyPcs, prevKeys, 56, 77);
-        prevPad = ch.pad; prevKeys = ch.keys;
+        // When pad and keys play together they split the register: the pad drops to an open
+        // root-fifth-tenth shell (plus the 7th) and the keys comp rootless above it.
+        const shell = [0, 4, 2, 3, 1, 6].map((o) => degs.indexOf(d + o)).filter((i) => i >= 0).map((i) => pcs[i]);
+        ch.padSplit = M.voiceChord(shell, prevPadS, 43, 67, { span: 24, open: true });
+        ch.keysSplit = M.voiceChord(keyPcs, prevKeysS, 62, 81, { avoid: ch.padSplit });
+        prevPad = ch.pad; prevKeys = ch.keys; prevPadS = ch.padSplit; prevKeysS = ch.keysSplit;
         ch.name = M.chordName(key, mode, d, e);
         ch.roman = M.roman(mode, d);
         ch.rootNorm = mod(d, 7) > 3 ? mod(d, 7) - 7 : mod(d, 7);
@@ -178,6 +193,40 @@
       ch.bass[4] = a;
     });
     return chords;
+  };
+
+  // Instrument ranges. A part moves by whole octaves when most of what it can play sits
+  // outside an instrument's range; single stray notes then fold back in by octaves.
+  M.foldInto = function (m, range) {
+    if (!range) return m;
+    while (m > range[1]) m -= 12;
+    while (m < range[0]) m += 12;
+    return m > range[1] ? m - 12 : m; // a range narrower than an octave keeps the lower side
+  };
+  M.rangeShift = function (notes, range) {
+    if (!range || !notes.length) return 0;
+    const out = (k) => notes.filter((m) => m + k < range[0] || m + k > range[1]).length;
+    let best = 0;
+    for (const k of [-12, 12, -24, 24]) if (out(k) < out(best) - notes.length * 0.15) best = k;
+    return best;
+  };
+
+  // Pad chords hold across bar lines. A hit on step 0 of a bar that does not bring new
+  // harmony is a tie: the chord already sounding carries on. Every other hit retriggers.
+  // Returns { tie, steps }: steps runs to the next harmony change or retriggering hit.
+  M.padHold = function (grid, n, hr, chords) {
+    const row = grid[0], len = row.length;
+    const harmony = (bar) => { const { c } = chords[Math.floor(bar / hr) % chords.length]; return c.d + c.e; };
+    const change = (bar) => bar % hr === 0 && (bar === 0 || harmony(bar) !== harmony(bar - 1));
+    const tie = n % len === 0 && !change(Math.floor(n / len));
+    const cap = len * hr * chords.length;
+    let k = 1;
+    for (; k < cap; k++) {
+      const m = n + k, s = m % len;
+      if (s === 0 && change(Math.floor(m / len))) break;
+      if (row[s] && s !== 0) break;
+    }
+    return { tie, steps: k };
   };
 
   M.melodyMidi = function (song, chord, row) {
@@ -378,6 +427,9 @@
       }
       return g;
     },
+    // A 2-bar call and answer with an arch: it rises to one clear peak, falls back to land on a
+    // chord tone, and the answer settles early so its last note rings. Rows are offsets from the
+    // chord root (−3..+8), so the line follows the harmony.
     melody(r, mood) {
       const g = grid(12, 32);
       const dens = mood.melody;
@@ -385,49 +437,68 @@
       const CELL = { q: [0], ee: [0, 2], rest: [], off: [2], dot: [0, 3], trip: [0, 1, 2] };
       const barRhythm = (answer) => {
         const on = [];
-        for (let b = 0; b < 4; b++) {
+        const last = answer ? (r.chance(0.35) ? 1 : 2) : 3; // the answer's final beat
+        for (let b = 0; b <= last; b++) {
           let c = r.weighted(cells);
-          if (answer && b === 2) c = r.pick(['q', 'q', 'off']);
-          if (answer && b === 3) c = 'rest';
+          if (answer && b === last) c = r.pick(['q', 'q', 'off']);
           CELL[c].forEach((o) => on.push(b * 4 + o));
         }
-        if (on.length < 2) on.push(0, 8);
+        if (!on.includes(0) && on.length < 2) on.push(0);
+        if (on.length < 2) on.push(8);
         return [...new Set(on)].sort((a, b) => a - b);
+      };
+      // a breath before a strong beat: clear the notes just ahead of it
+      const breathe = (on, beat) => {
+        const keep = on.filter((s) => s < beat - 2 || s >= beat);
+        return keep.length >= 2 && keep.length < on.length ? keep : on;
       };
       const CT = [-3, 0, 2, 4, 7];
       const nearestCT = (x) => CT.reduce((a, b) => (Math.abs(b - x) < Math.abs(a - x) ? b : a));
-      const walk = (rhythm, startPitch, rise) => {
-        let cur = startPitch;
-        const out = [];
-        rhythm.forEach((s, i) => {
+      const clamp = (x) => Math.max(-3, Math.min(8, x));
+      // Pitches for a rhythm: follow a line from start up to the peak and down to the end.
+      const contour = (steps, start, end) => {
+        const N = steps.length;
+        const peak = r.pick(CT.filter((x) => x >= Math.max(4, start + 2) && x > end));
+        const mid = [];
+        for (let i = 1; i < N - 1; i++) if (i >= N * 0.3 && i <= N * 0.75) mid.push(i);
+        const strong = mid.filter((i) => steps[i] % 4 === 0);
+        const pk = N < 3 ? N - 1 : r.pick(strong.length ? strong : mid.length ? mid : [1]);
+        let cur = start;
+        return steps.map((s, i) => {
+          if (i === pk) return (cur = peak);
           if (i > 0) {
-            const mv = r.weighted({ step: 6, skip: 2.5, same: 1, leap: 0.5 });
-            const dir = r.chance(rise ? 0.6 : 0.4) ? 1 : -1;
-            cur += mv === 'step' ? dir : mv === 'skip' ? 2 * dir : mv === 'leap' ? 4 * dir : 0;
+            const tgt = i < pk ? start + ((peak - start) * i) / pk : peak + ((end - peak) * (i - pk)) / (N - 1 - pk);
+            let mv = Math.round(tgt - cur) + (r.chance(0.3) ? r.pick([-1, 1]) : 0);
+            cur = clamp(cur + Math.max(-3, Math.min(3, mv)));
           }
           if (s % 4 === 0 && r.chance(0.8)) cur = nearestCT(cur);
-          while (cur > 8) cur -= 2;
-          while (cur < -3) cur += 2;
-          out.push(cur);
+          if (cur >= peak) cur = s % 4 === 0 ? CT[CT.indexOf(peak) - 1] : peak - 1;
+          return cur;
         });
-        return out;
       };
-      const rA = barRhythm(false);
-      const pA = walk(rA, r.pick([0, 2, 4, 2]), true);
-      let rB, pB;
+      let rA = barRhythm(false);
+      if (r.chance(0.45)) rA = breathe(rA, 16);
+      else if (r.chance(0.3)) rA = breathe(rA, 8);
+      const start = r.pick([0, 2, 4, 2]);
+      const land = r.pick([0, 0, 2, 4]);
+      let rB, pA, pB;
       if (r.chance(0.55)) {
-        // sequence: echo bar A's opening, shifted, then resolve
-        const shift = r.pick([-1, 1, -2]);
+        // sequence: bar B echoes bar A's opening a step or two lower, then resolves
+        pA = contour(rA, start, r.pick([0, 2]));
+        const shift = r.pick([-1, -2, -1]);
         rB = rA.filter((s) => s < 10);
-        pB = pA.slice(0, rB.length).map((p) => Math.max(-3, Math.min(8, p + shift)));
-        if (!rB.includes(8) && rB[rB.length - 1] < 8) { rB.push(8); pB.push(0); }
+        pB = pA.slice(0, rB.length).map((p, i) => (rB[i] === 0 ? nearestCT(p + shift) : clamp(p + shift)));
+        if (!rB.length || rB[rB.length - 1] < 8) { rB.push(8); pB.push(0); }
       } else {
         rB = barRhythm(true);
-        pB = walk(rB, pA[pA.length - 1], false);
+        const all = contour(rA.concat(rB.map((s) => s + 16)), start, land);
+        pA = all.slice(0, rA.length);
+        pB = all.slice(rA.length);
       }
-      pB[pB.length - 1] = r.pick([0, 0, 2, 4]); // land the phrase on a chord tone
-      rA.forEach((s, i) => (g[pA[i] + 3][s] = vel(r, s % 4 === 0 ? 0.78 : 0.6)));
-      rB.forEach((s, i) => (g[pB[i] + 3][16 + s] = vel(r, s % 4 === 0 ? 0.74 : 0.56)));
+      const top = Math.max(...pA, ...pB.slice(0, -1));
+      pB[pB.length - 1] = land < top ? land : 0; // land the phrase on a chord tone, below the peak
+      rA.forEach((s, i) => (g[pA[i] + 3][s] = vel(r, (s % 4 === 0 ? 0.78 : 0.6) + (pA[i] === top ? 0.06 : 0))));
+      rB.forEach((s, i) => (g[pB[i] + 3][16 + s] = vel(r, (s % 4 === 0 ? 0.74 : 0.56) - (i === rB.length - 1 ? 0.06 : 0))));
       return g;
     },
     drums(r, mood) {
@@ -441,6 +512,34 @@
       if (r.chance(0.4)) g[2][r.pick([7, 11, 15])] = 0.35;
       return g;
     },
+  };
+
+  // A gentle fill for the last bar of each 8, built from the pattern in play. Only the second
+  // half-bar changes: a brush swell, rim pickups into the downbeat, or the kick dropping out.
+  const FILLS = {
+    bossa: { swell: 2, pickup: 2, drop: 1 },
+    lofi: { drop: 2, swell: 2, pickup: 1 },
+    soft: { pickup: 2, swell: 1, drop: 1 },
+  };
+  M.drumFill = function (grid, style, r) {
+    const g = grid.map((row) => row.slice());
+    const level = (row, dflt) => { const hits = g[row].filter(Boolean); return hits.length ? Math.max(...hits) : dflt; };
+    const kind = r.weighted(FILLS[style] || FILLS.soft);
+    const drop = kind === 'drop' || r.chance(0.3);
+    if (kind === 'swell') {
+      const lv = level(1, 0.5);
+      for (let s = 12; s < 16; s++) g[1][s] = Math.max(g[1][s], lv * (0.35 + 0.13 * (s - 12)));
+      for (let s = 13; s < 16; s++) g[3][s] = 0;
+    } else if (kind === 'pickup') {
+      const lv = level(2, 0.55);
+      g[2][r.pick([12, 13])] = 0;
+      g[2][14] = lv * 0.5; g[2][15] = lv * 0.65;
+    }
+    if (drop) {
+      for (let s = 8; s < 16; s++) g[0][s] = 0;
+      for (const row of [3, 4]) for (const s of [14, 15]) g[row][s] *= 0.6;
+    }
+    return g;
   };
 
   /* ---------- Song ---------- */
