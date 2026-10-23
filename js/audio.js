@@ -429,6 +429,45 @@
     },
   };
 
+  /* ---------- Loudness metering (ITU-R BS.1770) ---------- */
+  // K-weighting for any sample rate: a +4 dB shelf above about 1.7 kHz, then a high-pass near
+  // 38 Hz. Built from the analog prototypes as libebur128 does; at 48 kHz these are the
+  // coefficients printed in the standard. Two biquads, each { b: [b0, b1, b2], a: [a1, a2] }.
+  M.kWeights = function (sr) {
+    let K = Math.tan((Math.PI * 1681.974450955533) / sr), Q = 0.7071752369554196;
+    const Vh = Math.pow(10, 3.999843853973347 / 20), Vb = Math.pow(Vh, 0.4996667741545416);
+    let a0 = 1 + K / Q + K * K;
+    const shelf = { b: [(Vh + (Vb * K) / Q + K * K) / a0, (2 * (K * K - Vh)) / a0, (Vh - (Vb * K) / Q + K * K) / a0], a: [(2 * (K * K - 1)) / a0, (1 - K / Q + K * K) / a0] };
+    K = Math.tan((Math.PI * 38.13547087602444) / sr); Q = 0.5003270373238773; a0 = 1 + K / Q + K * K;
+    return [shelf, { b: [1, -2, 1], a: [(2 * (K * K - 1)) / a0, (1 - K / Q + K * K) / a0] }];
+  };
+  // Integrated loudness of `channels` (arrays of samples) in LUFS: K-weighted power in 400 ms
+  // blocks every 100 ms, gated at -70 LUFS and then 10 LU below the blocks that passed.
+  // Closer to how loud a mix sounds than plain RMS. -Infinity for silence.
+  M.loudness = function (channels, sr) {
+    const hop = Math.round(sr / 10), hops = new Float64Array(Math.floor(channels[0].length / hop));
+    const [s, h] = M.kWeights(sr);
+    for (const x of channels) {
+      let s1 = 0, s2 = 0, h1 = 0, h2 = 0;
+      for (let j = 0, i = 0; j < hops.length; j++) {
+        let sum = 0;
+        for (const end = i + hop; i < end; i++) {
+          const v = x[i];
+          const y = s.b[0] * v + s1; s1 = s.b[1] * v - s.a[0] * y + s2; s2 = s.b[2] * v - s.a[1] * y;
+          const z = h.b[0] * y + h1; h1 = h.b[1] * y - h.a[0] * z + h2; h2 = h.b[2] * y - h.a[1] * z;
+          sum += z * z;
+        }
+        hops[j] += sum;
+      }
+    }
+    const lufs = (p) => -0.691 + 10 * Math.log10(p);
+    const blocks = [];
+    for (let j = 0; j + 4 <= hops.length; j++) blocks.push((hops[j] + hops[j + 1] + hops[j + 2] + hops[j + 3]) / (4 * hop));
+    const mean = (min) => { let sum = 0, k = 0; for (const p of blocks) if (lufs(p) > min) { sum += p; k++; } return k ? sum / k : 0; };
+    const ungated = mean(-70);
+    return ungated ? lufs(mean(Math.max(-70, lufs(ungated) - 10))) : -Infinity;
+  };
+
   /* ---------- Engine ---------- */
   const SENDS = {
     pad: [0.55, 0.12], keys: [0.32, 0.16], bass: [0.06, 0], arp: [0.45, 0.42],
