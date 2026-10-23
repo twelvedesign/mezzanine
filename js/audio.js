@@ -509,6 +509,11 @@
     pad: [0.55, 0.12], keys: [0.32, 0.16], bass: [0.06, 0], arp: [0.45, 0.42],
     melody: [0.42, 0.32], drums: [0.12, 0.02], texture: [0.12, 0],
   };
+  // Reverb early reflections for each ear, [ms, gain]. Irregular gaps keep them from ringing as a flutter.
+  const ER = [
+    [[7.3, 0.9], [12.1, -0.75], [19.7, 0.6], [26.3, -0.55], [33.9, 0.45], [44.6, -0.4], [57.2, 0.3], [69.8, -0.25]],
+    [[8.8, -0.85], [14.4, 0.7], [21.9, -0.6], [29.5, 0.5], [38.2, -0.45], [49.1, 0.35], [61.7, -0.3], [74.3, 0.2]],
+  ];
 
   class Engine {
     constructor() {
@@ -618,6 +623,9 @@
       return { input: comp, output: ceil };
     }
 
+    // A stereo hall: early reflections that reach each ear at different times, then a diffuse tail
+    // that builds up over 4-34 ms and darkens as it decays. The ears share no noise, so it sounds wide.
+    // The convolver normalizes the impulse's power, so the reflections do not make the reverb louder.
     makeIR(sec) {
       const ctx = this.ctx, sr = ctx.sampleRate, L = Math.floor(sr * sec);
       const buf = ctx.createBuffer(2, L, sr);
@@ -628,8 +636,14 @@
           const x = i / L;
           const k = 0.9 - x * 0.75; // high end darkens as the tail decays
           lp += ((Math.random() * 2 - 1) - lp) * k;
-          d[i] = lp * Math.pow(1 - x, 3.4) * (i < sr * 0.012 ? i / (sr * 0.012) : 1);
+          d[i] = lp * Math.pow(1 - x, 3.4) * Math.min(1, Math.max(0, (i / sr - 0.004) / 0.03));
         }
+        // each reflection is a short soft click, later ones duller (spread over more samples); together
+        // they carry about half the energy of the tail's first 80 ms
+        ER[ch].forEach(([ms, g], j) => {
+          const at = Math.round((ms / 1000) * sr), w = Math.round(((2 + j) * sr) / 48000);
+          for (let s = -w; s <= w; s++) d[at + s] += (14 * g * (1 + Math.cos((Math.PI * s) / (w + 1)))) / (w + 1);
+        });
       }
       return buf;
     }
