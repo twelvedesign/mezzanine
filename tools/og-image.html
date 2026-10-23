@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mezzanine link preview</title>
+<!-- The 1200×630 link preview for hosted copies. Rebuild icons/og-image.png with: node tools/make-og-image.mjs -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Poiret+One&display=block">
+<style>
+  /* Layout: wordmark, tagline and a sequencer strip on the left; the elevator's floor panel on the right. */
+  :root {
+    --bg: #0a1113; --surface: #121c1f; --raised: #182428; --line: #24343a; --cell: #1b282c; --cell-beat: #223338;
+    --fg: #e9e4d8; --muted: #8f9b97; --brass: #d3aa5f; --brass-hi: #f1d08e; --glow: rgba(211, 170, 95, 0.32);
+    --c-pad: #a3a9ff; --c-keys: #f0b765; --c-bass: #5fd0b8; --c-arp: #7cc4f5; --c-melody: #f39bb5; --c-drums: #d9c8a2;
+    --f-display: 'Poiret One', Didot, Georgia, serif;
+    --f-body: 'Instrument Sans', system-ui, sans-serif;
+    --f-mono: 'DM Mono', ui-monospace, Menlo, monospace;
+  }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    box-sizing: border-box; padding: 54px 60px 50px 72px;
+    display: grid; grid-template-columns: 1fr 318px; gap: 60px;
+    color: var(--fg); font-family: var(--f-body); -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(620px 440px at 16% 20%, hsla(205, 45%, 45%, 0.26), transparent 70%),
+      radial-gradient(760px 520px at 62% 92%, hsla(250, 45%, 45%, 0.22), transparent 70%),
+      radial-gradient(520px 380px at 96% 4%, hsla(30, 55%, 50%, 0.16), transparent 70%),
+      var(--bg);
+  }
+  .left { display: flex; flex-direction: column; min-width: 0; }
+  .led { display: flex; align-items: center; gap: 16px; font: 500 17px var(--f-mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+  .led b {
+    width: 52px; height: 52px; border-radius: 10px; display: grid; place-items: center;
+    font: 500 28px var(--f-mono); letter-spacing: 0; color: var(--brass-hi);
+    background: var(--surface); border: 1px solid var(--line); text-shadow: 0 0 12px var(--glow);
+  }
+  h1 {
+    margin: 46px 0 0; font: 400 136px/0.9 var(--f-display); letter-spacing: 0.02em;
+    color: var(--brass-hi); text-shadow: 0 0 34px rgba(211, 170, 95, 0.35);
+  }
+  .tag { margin: 26px 0 0; font-size: 33px; line-height: 1.25; font-weight: 500; max-width: 15em; text-wrap: balance; }
+  .seq { margin-top: auto; display: grid; grid-template-columns: repeat(16, 28px); grid-auto-rows: 15px; gap: 5px 6px; }
+  .seq i { border-radius: 4px; background: var(--cell); }
+  .seq i:nth-child(4n + 1) { background: var(--cell-beat); }
+  .seq i.m { background: var(--c-melody); box-shadow: 0 0 10px rgba(243, 155, 181, 0.45); }
+  .seq i.a { background: var(--c-arp); box-shadow: 0 0 10px rgba(124, 196, 245, 0.4); }
+  .seq i.b { background: var(--c-bass); box-shadow: 0 0 10px rgba(95, 208, 184, 0.4); }
+  .seq i.d { background: var(--c-drums); opacity: 0.8; }
+  .cap { margin: 22px 0 0; font: 400 17px var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); }
+
+  .panel {
+    border-radius: 22px; border: 1px solid var(--line); padding: 22px 26px;
+    background: linear-gradient(160deg, rgba(24, 36, 40, 0.92), rgba(18, 28, 31, 0.92));
+    display: grid; align-content: space-between;
+  }
+  .floor { display: flex; align-items: center; gap: 18px; font-size: 21px; color: var(--muted); }
+  .floor span:first-child {
+    flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center;
+    font: 500 19px var(--f-mono); border: 2px solid var(--line);
+    background: radial-gradient(circle at 35% 30%, var(--raised), var(--surface) 70%);
+  }
+  .floor.lit { color: var(--brass-hi); font-weight: 600; }
+  .floor.lit span:first-child { border-color: var(--brass); color: var(--brass-hi); box-shadow: 0 0 0 5px var(--glow), inset 0 0 14px var(--glow); }
+</style>
+</head>
+<body>
+  <div class="left">
+    <div class="led"><b>M</b>Now playing on the mezzanine</div>
+    <h1>Mezzanine</h1>
+    <p class="tag">Generative ambient &amp; elevator music for study and rest</p>
+    <div class="seq" id="seq" aria-hidden="true"></div>
+    <p class="cap">Pick a floor · it writes a song · it keeps evolving</p>
+  </div>
+  <div class="panel" aria-label="Floors">
+    <div class="floor"><span>R</span><span>Rooftop Stars</span></div>
+    <div class="floor"><span>5</span><span>Cloud Room</span></div>
+    <div class="floor"><span>4</span><span>Tea Garden</span></div>
+    <div class="floor"><span>3</span><span>Deep Focus</span></div>
+    <div class="floor"><span>2</span><span>Library Rain</span></div>
+    <div class="floor lit"><span>M</span><span>Mezzanine Café</span></div>
+    <div class="floor"><span>L</span><span>Lobby</span></div>
+    <div class="floor"><span>B</span><span>Night Shift</span></div>
+  </div>
+  <script>
+    // Four lanes of a bar (melody, arp, bass, drums), drawn like the app's sequencer.
+    const rows = [
+      ['m', '..x...x.x.....x.'],
+      ['a', 'x.x.x.x.x.x.x.x.'],
+      ['b', 'x.....x...x.....'],
+      ['d', 'x...x.x.x...x.xx'],
+    ];
+    const seq = document.getElementById('seq');
+    for (const [cls, pat] of rows) for (const ch of pat) {
+      const i = document.createElement('i');
+      if (ch === 'x') i.className = cls;
+      seq.append(i);
+    }
+  </script>
+</body>
+</html>

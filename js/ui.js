@@ -40,12 +40,24 @@
     if (!$('#realChk').checked) M.setInstrumentFamily(s, false);
     loadSong(s, { atBar });
   }
-  function touched() { song.edited = true; remember(); renderCode(); }
-  let remT;
-  function remember() {
+  function touched(auto) { song.edited = true; remember(auto); renderCode(); }
+  let remT, addressDue = false;
+  function remember(auto) {
+    if (!auto) addressDue = true;
     clearTimeout(remT);
-    remT = setTimeout(() => store.set('last', M.encodeSong(song)), 400);
+    remT = setTimeout(() => {
+      const code = M.encodeSong(song);
+      store.set('last', code);
+      if (addressDue) { addressDue = false; showInAddress(code); }
+    }, 400);
     renderCode();
+  }
+  // Local and hosted copies keep the address on the song the listener picked or edited, so a
+  // bookmark or a reload brings it back. Evolve's own changes stay out of it (they would rewrite
+  // the address every few bars), and the artifact viewer never shows the frame's address.
+  function showInAddress(code) {
+    if (!LOCAL || location.hash === '#' + code) return;
+    try { history.replaceState(history.state, '', '#' + code); } catch (e) {}
   }
 
   /* ---------- Rendering ---------- */
@@ -86,7 +98,7 @@
       $('#chordName').textContent = c.name;
       $('#chordRoman').textContent = 'press play';
     }
-    document.title = 'Mezzanine';
+    document.title = song.title + ' · ' + mood.name + ' · Mezzanine';
   }
 
   // The theme's chords and, below them, the bridge's; either row opens the same editor.
@@ -205,11 +217,11 @@
       btns.push(L.breathe);
     }
     L.vol = h('input', { type: 'range', min: 0, max: 1, step: 0.01, id: 'vol-' + id, 'aria-label': meta.name + ' volume' });
-    L.vol.addEventListener('input', () => { song.parts[id].vol = +L.vol.value; engine.applyMix(); remember(); });
+    L.vol.addEventListener('input', () => { song.parts[id].vol = +L.vol.value; engine.applyMix(); touched(); });
     const faders = [h('label', {}, 'Level', L.vol)];
     if (meta.rows) {
       L.vary = h('input', { type: 'range', min: 0, max: 1, step: 0.01, id: 'vary-' + id, 'aria-label': meta.name + ' variation' });
-      L.vary.addEventListener('input', () => { song.parts[id].vary = +L.vary.value; remember(); });
+      L.vary.addEventListener('input', () => { song.parts[id].vary = +L.vary.value; touched(); });
       faders.push(h('label', { title: 'How freely each pass improvises on the pattern' }, 'Vary', L.vary));
     }
     L.rest = h('span', { class: 'rest-tag', hidden: true }, 'resting');
@@ -387,7 +399,7 @@
       if (res.key) renderMixer();
       if (res.chords) renderInfo();
       if (res.lane) syncLane(res.lane);
-      touched();
+      touched(true);
     },
   });
   function resetArrangement() { conductor.reset(); showSection(null); }
@@ -600,14 +612,23 @@
     renderShelf();
     msg('Kept “' + song.title + '” on your shelf.');
   });
-  $('#copyBtn').addEventListener('click', () => {
+  // Copies text, or when the clipboard is refused shows it selected in the code box.
+  function copy(text, what, done) {
     const inp = $('#codeOut');
-    const done = () => msg('Song code copied.');
-    const fallback = () => { inp.focus(); inp.select(); msg('Code selected. Press Ctrl+C or ⌘C to copy.'); };
-    try { navigator.clipboard.writeText(inp.value).then(done, fallback); } catch (e) { fallback(); }
-  });
+    const fallback = () => { inp.value = text; inp.focus(); inp.select(); msg(what + ' selected. Press Ctrl+C or ⌘C to copy.'); };
+    try { navigator.clipboard.writeText(text).then(() => msg(done), fallback); } catch (e) { fallback(); }
+  }
+  $('#codeOut').addEventListener('blur', renderCode);
+  $('#copyBtn').addEventListener('click', () => copy(M.encodeSong(song), 'Code', 'Song code copied.'));
+  // Song links open this page on the song. Inside the artifact the frame's own address is private,
+  // so links go to MZ_LINK instead, which the build sets to the public site.
+  const linkBase = LOCAL ? location.href : window.MZ_LINK;
+  if (!linkBase) $('#linkBtn').hidden = true;
+  $('#linkBtn').addEventListener('click', () => copy(M.songLink(linkBase, song), 'Link', 'Link to “' + song.title + '” copied.'));
+  // A link pasted into the address bar of an open page only changes the fragment.
+  window.addEventListener('hashchange', () => { try { loadSong(M.songFromLink(location.hash), { atBar: true }); } catch (e) {} });
   $('#loadBtn').addEventListener('click', () => {
-    try { loadSong(M.decodeSong($('#codeIn').value), { atBar: true }); $('#codeIn').value = ''; msg('Loaded “' + song.title + '”.'); }
+    try { loadSong(M.songFromLink($('#codeIn').value), { atBar: true }); $('#codeIn').value = ''; msg('Loaded “' + song.title + '”.'); }
     catch (e) { msg('That code could not be read. ' + (e.message.startsWith('Song codes') ? e.message : 'Check that it was copied in full.')); }
   });
 
@@ -710,11 +731,11 @@
     changedChords();
   });
   const bindRange = (id, apply, fmt) => $('#' + id).addEventListener('input', (e) => { const v = +e.target.value; $('#' + id + 'Out').textContent = fmt(v); apply(v); });
-  bindRange('tempo', (v) => { song.tempo = v; engine.applyFx(); renderInfo(); remember(); }, (v) => v);
-  bindRange('swing', (v) => { song.swing = v; remember(); }, (v) => Math.round(v * 100) + '%');
-  bindRange('space', (v) => { song.fx.space = v; engine.applyFx(); remember(); }, pct);
-  bindRange('echo', (v) => { song.fx.echo = v; engine.applyFx(); remember(); }, pct);
-  bindRange('warmth', (v) => { song.fx.warmth = v; engine.applyFx(); remember(); }, pct);
+  bindRange('tempo', (v) => { song.tempo = v; engine.applyFx(); renderInfo(); touched(); }, (v) => v);
+  bindRange('swing', (v) => { song.swing = v; touched(); }, (v) => Math.round(v * 100) + '%');
+  bindRange('space', (v) => { song.fx.space = v; engine.applyFx(); touched(); }, pct);
+  bindRange('echo', (v) => { song.fx.echo = v; engine.applyFx(); touched(); }, pct);
+  bindRange('warmth', (v) => { song.fx.warmth = v; engine.applyFx(); touched(); }, pct);
   bindRange('volume', (v) => { engine.setVolume(v); store.set('volume', v); }, pct);
   $('#pentaChk').addEventListener('change', (e) => { song.penta = e.target.checked; updateLabels(curChord()); touched(); });
   $('#evolveChk').addEventListener('change', (e) => store.set('evolve', e.target.checked));
@@ -767,8 +788,7 @@
   $('#arrangeChk').checked = store.get('arrange', true);
   $('#realChk').checked = store.get('real', true);
   let first = null;
-  const hash = LOCAL ? decodeURIComponent(location.hash.slice(1)) : '';
-  try { if (hash) first = M.decodeSong(hash); } catch (e) {}
+  try { if (location.hash) first = M.songFromLink(location.hash); } catch (e) {}
   if (!first) { try { const last = store.get('last', null); if (last) { first = M.decodeSong(last); M.setInstrumentFamily(first, $('#realChk').checked); } } catch (e) {} }
   if (!first) first = M.generateSong(M.newSeed(), 'lobby');
   loadSong(first);

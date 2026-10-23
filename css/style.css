@@ -265,6 +265,7 @@ input[type="range"] { width: 100%; accent-color: var(--brass); margin: 0; height
 .library { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .lib-col { display: grid; gap: 10px; align-content: start; min-width: 0; }
 .code-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.code-btns { display: flex; gap: 8px; }
 .code-row input { flex: 1 1 180px; min-width: 0; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 12px; }
 .msg { margin: 0; min-height: 1.4em; font-size: 13px; color: var(--brass-hi); }
 .shelf { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

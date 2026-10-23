@@ -809,4 +809,16 @@
     }
     return song;
   };
+
+  /* ---------- Song links ---------- */
+  // A link is the page's address with the song code as its #fragment. Codes are bare tokens
+  // (letters, digits, '.', '-', '_'), the only fragments the Claude artifact viewer passes on.
+  M.songLink = (base, song) => String(base).split('#')[0] + '#' + M.encodeSong(song);
+  // Reads a song from a whole link, a #fragment or a bare code. Throws like decodeSong.
+  M.songFromLink = function (text) {
+    let code = String(text || '');
+    if (code.includes('#')) code = code.slice(code.indexOf('#') + 1);
+    try { code = decodeURIComponent(code); } catch (e) {}
+    return M.decodeSong(code);
+  };
 })();
