@@ -189,6 +189,32 @@
       </div>
       <ul class="shelf" id="shelf"></ul>
     </div>
+    <div class="lib-col export-col" id="exportCol">
+      <h3>Export</h3>
+      <p class="hint">Save the current song as a file. The WAV is rendered faster than real time and keeps evolving and arranging itself when those switches are on. The MIDI file has one track per part, for Logic Pro or any DAW.</p>
+      <div class="code-row">
+        <select id="wavLen" aria-label="WAV length">
+          <option value="2">2 minutes</option>
+          <option value="5" selected>5 minutes</option>
+          <option value="10">10 minutes</option>
+        </select>
+        <button id="wavBtn" class="btn" type="button">Download WAV (5 min)</button>
+      </div>
+      <div class="code-row">
+        <select id="midiBars" aria-label="MIDI length">
+          <option value="16">16 bars</option>
+          <option value="32" selected>32 bars</option>
+          <option value="64">64 bars</option>
+        </select>
+        <button id="midiBtn" class="btn" type="button">Download MIDI (32 bars)</button>
+      </div>
+      <div class="exp-prog" id="expProg" hidden>
+        <progress id="expBar" max="1" aria-label="Export progress"></progress>
+        <span id="expText" class="mono"></span>
+        <button id="expCancel" class="tbtn" type="button">Cancel</button>
+      </div>
+      <p class="msg" id="expMsg" role="status"></p>
+    </div>
   </section>
 
   <footer class="foot mono">
@@ -203,6 +229,9 @@
 </div>
 <script src="js/core.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/evolve.js"></script>
+<script src="js/export.js"></script>
+<script src="js/render.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/device.js"></script>
 <!-- body:end -->

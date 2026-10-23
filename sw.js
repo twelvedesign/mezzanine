@@ -2,10 +2,10 @@
    The page and scripts are network-first, so edits and updates show up straight away;
    instrument samples and web fonts are cache-first, since they never change.
    Registered by js/device.js only over http(s), and never inside the Claude artifact. */
-const CACHE = 'mezzanine-v1';
+const CACHE = 'mezzanine-v2';
 const SHELL = [
   './', 'index.html', 'css/style.css',
-  'js/core.js', 'js/audio.js', 'js/ui.js', 'js/device.js',
+  'js/core.js', 'js/audio.js', 'js/evolve.js', 'js/export.js', 'js/render.js', 'js/ui.js', 'js/device.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 

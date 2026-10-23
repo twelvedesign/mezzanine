@@ -24,7 +24,6 @@
   M.engine = engine;
   let song = null;
   let selChord = -1;
-  let energy = 3;
   const lanes = {};
 
   /* ---------- Song lifecycle ---------- */
@@ -364,59 +363,20 @@
   });
   engine.on('chords', () => { renderProg(); updateLabels(engine.chords[engine.curChord || 0] || engine.chords[0]); });
 
-  // Evolve and auto-arrange run at bar lines, slightly ahead of what you hear.
-  engine.on('bar', ({ bar }) => {
-    if (bar === 0 || bar % 8 !== 0) return;
-    if ($('#evolveChk').checked) evolve(bar);
-    if ($('#arrangeChk').checked) arrange();
+  // Evolve and auto-arrange live in evolve.js; the page only reacts to what changed.
+  const conductor = new M.Evolve.Conductor(engine, {
+    evolve: () => $('#evolveChk').checked,
+    arrange: () => $('#arrangeChk').checked,
+    onChange(res) {
+      if (!res.msg) return;
+      flash(res.msg);
+      if (res.key) renderMixer();
+      if (res.chords) renderInfo();
+      if (res.lane) syncLane(res.lane);
+      touched();
+    },
   });
-
-  function evolve(bar) {
-    const r = Math.random;
-    if (bar % 32 === 0 && r() < 0.55) {
-      if (r() < 0.6) {
-        M.regenProgression(song);
-        engine.rebuild();
-        flash('new chord progression');
-      } else {
-        const shift = [5, 7, 2, -2][Math.floor(r() * 4)];
-        song.key = M.mod(song.key + shift, 12);
-        engine.rebuild();
-        flash('modulated to ' + M.NOTE[song.key] + ' ' + M.MODES[song.mode].name);
-        renderMixer();
-      }
-      renderInfo(); touched();
-      return;
-    }
-    if (r() < 0.35) return;
-    const pool = { melody: 4, arp: 2, keys: 1, bass: 1, drums: 1 };
-    for (const k of Object.keys(pool)) if (!song.parts[k].on) delete pool[k];
-    if (!Object.keys(pool).length) return;
-    const pick = M.rng(M.newSeed()).weighted(pool);
-    if (pick === 'melody') flash(M.varyMelody(song));
-    else { M.regenPart(song, pick); flash('new ' + M.PART[pick].name.toLowerCase() + ' pattern'); }
-    syncLane(pick); touched();
-  }
-
-  const LAYERS = {
-    1: ['pad', 'texture', 'arp'],
-    2: ['pad', 'texture', 'arp', 'bass', 'keys'],
-    3: ['pad', 'texture', 'arp', 'bass', 'keys', 'melody', 'drums'],
-  };
-  function arrange() {
-    const r = Math.random;
-    const step = r() < 0.6 ? (r() < 0.5 ? -1 : 1) : 0;
-    energy = Math.max(1, Math.min(3, energy + step));
-    const arr = {};
-    for (const p of M.PARTS) {
-      let on = LAYERS[energy].includes(p.id);
-      if (on && p.id !== 'pad' && p.id !== 'texture' && r() < 0.15) on = false;
-      arr[p.id] = on ? 1 : 0;
-    }
-    if (energy < 3 && r() < 0.35) arr.melody = 1;
-    engine.setArrangement(arr);
-  }
-  function resetArrangement() { energy = 3; engine.setArrangement({}); }
+  function resetArrangement() { conductor.reset(); }
   engine.on('arrange', (arr) => {
     for (const meta of M.PARTS) {
       const L = lanes[meta.id];
@@ -655,6 +615,59 @@
     recBtn.classList.add('rec');
     recIv = setInterval(() => { const s = Math.floor((Date.now() - recStart) / 1000); recBtn.textContent = 'Stop recording ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }, 500);
   });
+
+  /* ---------- Export (local copies only, like recording) ---------- */
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = h('a', { href: url, download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  function expMsg(t) { $('#expMsg').textContent = t; }
+  if (!LOCAL) $('#exportCol').hidden = true;
+  const wavLabel = () => { $('#wavBtn').textContent = 'Download WAV (' + $('#wavLen').value + ' min)'; };
+  const midiLabel = () => { $('#midiBtn').textContent = 'Download MIDI (' + $('#midiBars').value + ' bars)'; };
+  $('#wavLen').addEventListener('change', wavLabel);
+  $('#midiBars').addEventListener('change', midiLabel);
+
+  $('#midiBtn').addEventListener('click', () => {
+    const bars = +$('#midiBars').value;
+    const score = M.songNotes(song, { bars });
+    download(new Blob([M.writeMidi(score)], { type: 'audio/midi' }), M.fileSlug(song.title) + '-' + bars + 'bars.mid');
+    expMsg('MIDI saved: ' + score.tracks.length + ' parts, ' + bars + ' bars at ' + song.tempo + ' BPM.');
+  });
+
+  let exporting = null;
+  const PHASE = { samples: 'Loading instruments', render: 'Rendering', write: 'Writing WAV' };
+  $('#wavBtn').addEventListener('click', async () => {
+    if (exporting) return;
+    const min = +$('#wavLen').value;
+    exporting = new AbortController();
+    $('#wavBtn').disabled = true;
+    $('#expProg').hidden = false;
+    expMsg('');
+    const started = Date.now();
+    try {
+      engine.init(); // instruments are decoded on the live context and shared with the render
+      const res = await M.renderSong(song, {
+        seconds: min * 60, evolve: $('#evolveChk').checked, arrange: $('#arrangeChk').checked, signal: exporting.signal,
+        onProgress({ phase, done }) {
+          const bar = $('#expBar');
+          if (done == null) bar.removeAttribute('value'); else bar.value = done;
+          $('#expText').textContent = PHASE[phase] + (done == null ? '…' : ' ' + Math.round(done * 100) + '%');
+        },
+      });
+      download(res.blob, M.fileSlug(song.title) + '-' + min + 'min.wav');
+      expMsg('WAV saved: ' + min + ' min, ' + Math.round(res.blob.size / 1048576) + ' MB, rendered in ' + Math.round((Date.now() - started) / 1000) + ' s.');
+    } catch (e) {
+      expMsg(e.name === 'AbortError' ? 'Export cancelled.' : 'The WAV could not be rendered. ' + e.message);
+    } finally {
+      exporting = null;
+      $('#wavBtn').disabled = false;
+      $('#expProg').hidden = true;
+    }
+  });
+  $('#expCancel').addEventListener('click', () => exporting && exporting.abort());
 
   /* ---------- Controls ---------- */
   $('#playBtn').addEventListener('click', togglePlay);
