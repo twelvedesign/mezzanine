@@ -45,3 +45,56 @@ test('K-weighting counts highs more and deep lows less than plain RMS', () => {
   const hi = at(8000) - mid;
   assert.ok(hi > 2.5 && hi < 4, 'highs count about 3 dB more: ' + hi);
 });
+
+/* ---------- Master chain ---------- */
+// A WaveShaper curve maps inputs -1..1 onto its points; `range` stretches that over -range..range.
+const shape = (curve, range, x) => {
+  const p = ((x / range + 1) / 2) * (curve.length - 1), i = Math.min(curve.length - 2, Math.floor(p));
+  return curve[i] + (curve[i + 1] - curve[i]) * (p - i);
+};
+
+test('the output ceiling passes the mix untouched below its knee and never exceeds the ceiling', () => {
+  const { knee, ceil, range } = M.LIMIT, c = M.ceilingCurve(knee, ceil, range);
+  assert.ok(ceil < Math.pow(10, -1 / 20) + 1e-6, 'ceiling at or below -1 dBFS');
+  for (const x of [0, 0.001, -0.02, 0.3, -0.6, knee * 0.999]) close(shape(c, range, x), x, 1e-6, 'unity at ' + x);
+  for (let i = 1; i < c.length; i++) assert.ok(c[i] >= c[i - 1], 'monotonic');
+  for (let i = 0; i < c.length; i++) {
+    assert.ok(Math.abs(c[i]) <= ceil, 'never above the ceiling');
+    close(c[i], -c[c.length - 1 - i], 1e-7, 'odd symmetric');
+  }
+  assert.ok(shape(c, range, range) > ceil - 0.01, 'loud overs bend all the way to the ceiling');
+  assert.ok(shape(c, range, 1) > knee && shape(c, range, 1) < ceil, 'a full-scale peak bends softly');
+});
+
+test('tape saturation is unity for quiet signals and rounds off peaks', () => {
+  const { drive, range } = M.TAPE, c = M.tapeCurve(drive, range);
+  close(shape(c, range, 0.001), 0.001, 1e-5, 'unity slope near zero');
+  for (let i = 1; i < c.length; i++) assert.ok(c[i] >= c[i - 1], 'monotonic');
+  for (let i = 0; i < c.length; i++) close(c[i], -c[c.length - 1 - i], 1e-7, 'odd symmetric');
+  const y = shape(c, range, 0.5);
+  assert.ok(y < 0.5 && y > 0.3, 'a loud peak is rounded, not clipped: ' + y);
+});
+
+test('every floor has a loudness trim, and tape only on the lo-fi floors', () => {
+  for (const mood of M.MOODS) {
+    const mix = M.mixFor(M.generateSong('trim', mood.id));
+    assert.ok(Number.isFinite(mix.trim) && Math.abs(mix.trim) <= 8, `${mood.id} trim ${mix.trim}`);
+    assert.ok(M.FLOOR_MIX[mood.id] && Number.isFinite(M.FLOOR_MIX[mood.id].trim), `${mood.id} has a FLOOR_MIX entry`);
+    assert.equal(mix.tape > 0, ['night', 'rain'].includes(mood.id), `${mood.id} tape ${mix.tape}`);
+    assert.ok(mix.tape >= 0 && mix.tape <= 1);
+  }
+  assert.deepEqual(M.mixFor({ mood: 'nowhere', fx: {} }), { trim: 0, tape: 0 });
+});
+
+test('a song can set its own tape amount, and old song codes keep their floor\'s', () => {
+  const song = M.generateSong('tape', 'night');
+  const floor = M.mixFor(song).tape;
+  song.edited = true;
+  const back = M.decodeSong(M.encodeSong(song));
+  assert.equal(back.fx.tape, undefined, 'codes saved before tape existed have no fx.tape');
+  assert.equal(M.mixFor(back).tape, floor);
+  assert.equal(M.mixFor({ ...song, fx: { ...song.fx, tape: 0 } }).tape, 0);
+  assert.equal(M.mixFor({ ...song, fx: { ...song.fx, tape: 3 } }).tape, 1, 'clamped');
+  assert.equal(M.mixFor({ ...song, fx: { ...song.fx, tape: 'x' } }).tape, floor, 'ignores junk');
+  assert.equal(M.mixFor({ ...song, mood: 'lobby', fx: { ...song.fx, tape: 0.4 } }).tape, 0.4);
+});

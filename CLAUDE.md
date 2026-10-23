@@ -20,5 +20,5 @@ Generative ambient and elevator music in the browser. See README.md for features
 ## Verify
 - `npm test` must pass. Add tests for new pure logic in `tests/`.
 - Browser check: `.claude/launch.json` has a `mezzanine` server on port 8791. Look for console errors, then click Play.
-- Audio check without ears: render offline and measure the level. Build an `M.Engine`, call `init(new OfflineAudioContext(...))`, then `setSong` and set `playing = true`. Loop `schedule(n, t)` with `t += stepDur(n)`, then `startRendering()`. Check the peak stays below 1.0 and that there are no NaN samples. Mixes currently sit around −16 dB RMS.
+- Audio check without ears: render offline and measure the level. Build an `M.Engine`, call `init(new OfflineAudioContext(...))`, then `setSong` and set `playing = true`. Loop `schedule(n, t)` with `t += stepDur(n)`, then `startRendering()`. Check the peak stays below 1.0 and that there are no NaN samples. `tools/mix-check.html` (on the local server) does this for every floor and several seeds: at 100% volume floors sit near −16 LUFS (`M.loudness`, BS.1770) and the output limiter keeps peaks under −1 dBFS. If a change makes a floor louder or quieter, update its trim in `M.FLOOR_MIX` from the tool's suggestion.
 - Nobody can listen inside a session. Say so when reporting, and describe what should be heard.

@@ -468,6 +468,42 @@
     return ungated ? lufs(mean(Math.max(-70, lufs(ungated) - 10))) : -Infinity;
   };
 
+  /* ---------- Master chain: tape, floor trims, output limiter ---------- */
+  // Per-floor mix. `trim` (dB, after the bus compressor) brings each floor to about -16 LUFS at
+  // full volume, so floors match in loudness and peaks keep clear of the limiter. Measured with
+  // tools/mix-check.html (BS.1770 loudness, 6 seeds per floor). `tape` (0..1) is the amount of
+  // wow, flutter and saturation. A song's own fx.tape, when it has one, wins.
+  M.FLOOR_MIX = {
+    night: { trim: -1.3, tape: 0.7 }, lobby: { trim: -2.3 }, cafe: { trim: -1.3 }, rain: { trim: -2.2, tape: 0.5 },
+    focus: { trim: -2.3 }, tea: { trim: -1.3 }, cloud: { trim: -1.7 }, roof: { trim: -1.1 },
+  };
+  M.mixFor = function (song) {
+    const floor = M.FLOOR_MIX[song.mood] || {}, own = song.fx && song.fx.tape;
+    const tape = typeof own === 'number' && isFinite(own) ? own : floor.tape || 0;
+    return { trim: floor.trim || 0, tape: Math.max(0, Math.min(1, tape)) };
+  };
+  // Tape at amount 1: delay-time swings (rate Hz, depth s) for two slow wows and two fast flutters,
+  // at most about ±13 cents together, then tanh saturation mixed in parallel at `wet`.
+  M.TAPE = { delay: 0.005, mod: [[0.53, 0.0012], [0.21, 0.0014], [6.3, 0.000025], [10.7, 0.000008]], drive: 2.5, wet: 0.5, range: 2 };
+  // Output limiter: a fast compressor from `threshold` dB, then a soft ceiling that is unity up to
+  // `knee` and never passes `ceil` (-1 dBFS), for overs up to `range` (+6 dBFS).
+  M.LIMIT = { threshold: -2.5, attack: 0.002, release: 0.25, knee: 0.81, ceil: 0.891, range: 2 };
+
+  // WaveShaper curves. The shaper sees the signal divided by `range`, so the curve covers ±range.
+  M.ceilingCurve = function (knee, ceil, range, n = 4097) {
+    const c = new Float32Array(n), w = ceil - knee;
+    for (let i = 0; i < n; i++) {
+      const x = (range * (2 * i - (n - 1))) / (n - 1), a = Math.abs(x);
+      c[i] = a <= knee ? x : Math.sign(x) * (knee + w * Math.tanh((a - knee) / w));
+    }
+    return c;
+  };
+  M.tapeCurve = function (drive, range, n = 4097) {
+    const c = new Float32Array(n);
+    for (let i = 0; i < n; i++) c[i] = Math.tanh((drive * range * (2 * i - (n - 1))) / (n - 1)) / drive;
+    return c;
+  };
+
   /* ---------- Engine ---------- */
   const SENDS = {
     pad: [0.55, 0.12], keys: [0.32, 0.16], bass: [0.06, 0], arp: [0.45, 0.42],
@@ -489,16 +525,19 @@
       this.master = ctx.createGain(); this.master.gain.value = 0.75;
       this.fade = ctx.createGain(); this.fade.gain.value = 1;
       this.bus = ctx.createGain();
+      this.tape = this.makeTape();
       this.warm = ctx.createBiquadFilter(); this.warm.type = 'lowpass'; this.warm.Q.value = 0.4;
       this.hpf = ctx.createBiquadFilter(); this.hpf.type = 'highpass'; this.hpf.frequency.value = 28;
       this.comp = ctx.createDynamicsCompressor();
       this.comp.threshold.value = -16; this.comp.ratio.value = 3; this.comp.knee.value = 12;
       this.comp.attack.value = 0.02; this.comp.release.value = 0.4;
+      this.trim = ctx.createGain(); // evens out loudness between floors (FLOOR_MIX)
+      this.limiter = this.makeLimiter();
       this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 1024; this.analyser.smoothingTimeConstant = 0.85;
-      this.bus.connect(this.warm); this.warm.connect(this.hpf); this.hpf.connect(this.comp);
-      this.comp.connect(this.master); this.master.connect(this.fade);
-      this.fade.connect(this.analyser); this.analyser.connect(ctx.destination);
-      try { this.recDest = ctx.createMediaStreamDestination(); this.fade.connect(this.recDest); } catch (e) { this.recDest = null; }
+      this.bus.connect(this.tape.input); this.tape.output.connect(this.warm); this.warm.connect(this.hpf); this.hpf.connect(this.comp);
+      this.comp.connect(this.trim); this.trim.connect(this.master); this.master.connect(this.fade);
+      this.fade.connect(this.limiter.input); this.limiter.output.connect(this.analyser); this.analyser.connect(ctx.destination);
+      try { this.recDest = ctx.createMediaStreamDestination(); this.limiter.output.connect(this.recDest); } catch (e) { this.recDest = null; }
       if (!offlineCtx && this.outWant) this.routeOut(this.outWant);
 
       // reverb
@@ -545,6 +584,40 @@
       if (this.song) { this.applyFx(); this.applyMix(true); }
     }
 
+    // Tape for the lo-fi floors: the mix runs through a short delay whose time drifts (wow) and
+    // trembles (flutter), then a soft saturation mixed in parallel. applyFx sets the amount; at 0
+    // the mix passes unchanged, only 5 ms later.
+    makeTape() {
+      const ctx = this.ctx, T = M.TAPE;
+      const input = ctx.createDelay(0.02); input.delayTime.value = T.delay;
+      const mods = T.mod.map(([rate]) => {
+        const o = osc(ctx, 'sine', rate), g = ctx.createGain(); g.gain.value = 0;
+        o.connect(g); g.connect(input.delayTime); o.start();
+        return g;
+      });
+      const dry = ctx.createGain(), wet = ctx.createGain(), pre = ctx.createGain(), sat = ctx.createWaveShaper(), output = ctx.createGain();
+      wet.gain.value = 0; pre.gain.value = 1 / T.range; sat.curve = M.tapeCurve(T.drive, T.range);
+      input.connect(dry); dry.connect(output);
+      input.connect(pre); pre.connect(sat); sat.connect(wet); wet.connect(output);
+      return { input, output, mods, dry, wet };
+    }
+
+    // Safety limiter after the master and fade gains. A fast compressor holds loud passages near
+    // its threshold, then a soft ceiling bends the few quicker peaks, so the output never passes
+    // -1 dBFS. Below the threshold both leave the mix untouched.
+    makeLimiter() {
+      const ctx = this.ctx, L = M.LIMIT;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = L.threshold; comp.knee.value = 0; comp.ratio.value = 20;
+      comp.attack.value = L.attack; comp.release.value = L.release;
+      // A compressor adds make-up gain of 0.6 times what it would take off a full-scale signal
+      // (Web Audio spec). Take it back, along with the 1/range the ceiling curve expects.
+      const back = ctx.createGain(); back.gain.value = Math.pow(10, (0.6 * L.threshold * (1 - 1 / 20)) / 20) / L.range;
+      const ceil = ctx.createWaveShaper(); ceil.curve = M.ceilingCurve(L.knee, L.ceil, L.range);
+      comp.connect(back); back.connect(ceil);
+      return { input: comp, output: ceil };
+    }
+
     makeIR(sec) {
       const ctx = this.ctx, sr = ctx.sampleRate, L = Math.floor(sr * sec);
       const buf = ctx.createBuffer(2, L, sr);
@@ -588,6 +661,11 @@
       const beat = 60 / tempo;
       this.dL.delayTime.setTargetAtTime(beat * 0.75, t, 0.1);
       this.dR.delayTime.setTargetAtTime(beat * 0.75, t, 0.1);
+      const mix = M.mixFor(this.song), tp = this.tape;
+      this.trim.gain.setTargetAtTime(Math.pow(10, mix.trim / 20), t, 0.4);
+      M.TAPE.mod.forEach(([, depth], i) => tp.mods[i].gain.setTargetAtTime(depth * mix.tape, t, 0.6));
+      tp.wet.gain.setTargetAtTime(mix.tape * M.TAPE.wet, t, 0.3);
+      tp.dry.gain.setTargetAtTime(1 - mix.tape * M.TAPE.wet, t, 0.3);
     }
 
     audible(id) {

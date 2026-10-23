@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mezzanine mix check</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fbfaf7; --fg: #1d2326; --dim: #6b7378; --bad: #b3261e; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111618; --fg: #e9e4d8; --dim: #8d969b; --bad: #f2b8b5; } }
+  body { margin: 16px; background: var(--bg); color: var(--fg); font: 14px/1.45 ui-monospace, Menlo, monospace; }
+  h1 { font-size: 18px; } p { max-width: 70ch; color: var(--dim); }
+  label { margin-right: 12px; } input { width: 5em; }
+  pre { white-space: pre; overflow-x: auto; }
+</style>
+</head>
+<body>
+<h1>Mix check</h1>
+<p>Renders songs from every floor offline at the Volume slider's setting and measures the output:
+sample peak, plain RMS and BS.1770 loudness (LUFS, from <code>M.loudness</code>), skipping the first
+5 seconds for RMS and loudness. "pre" columns are measured before the output limiter; maxGR is the most
+it took off a 400 ms block (dB) and lim% the share of blocks where it took over 0.5 dB. The trim column
+suggests a new <code>FLOOR_MIX</code> trim that brings each floor to the target. Serve the repository
+(<code>npm run serve</code>) and open <code>/tools/mix-check.html</code>.</p>
+<form id="opts">
+  <label>Seeds per floor <input id="seeds" type="number" value="4" min="1" max="20"></label>
+  <label>Seconds <input id="secs" type="number" value="40" min="10" max="300"></label>
+  <label>Volume <input id="vol" type="number" value="1" min="0" max="1" step="0.05"></label>
+  <label>Target LUFS <input id="target" type="number" value="-18" step="0.5"></label>
+  <button>Run</button>
+</form>
+<pre id="out"></pre>
+<script>window.MZ_SAMPLE_BASE = '../samples/';</script>
+<script src="../js/core.js"></script>
+<script src="../js/audio.js"></script>
+<script>
+(function () {
+  const out = document.getElementById('out');
+  const log = (s) => { out.textContent += s + '\n'; };
+  const db = (x) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
+  const fmt = (x, w = 7) => (isFinite(x) ? x.toFixed(1) : String(x)).padStart(w);
+
+  async function loadInstruments(sr) {
+    M.Samples.attach(new OfflineAudioContext(2, 1, sr));
+    const ids = [...new Set(Object.values(M.VOICES).filter((v) => v.kind === 'sample').map((v) => v.inst))];
+    ids.forEach((id) => M.Samples.ensure(id));
+    while (ids.some((id) => !['ready', 'error'].includes(M.Samples.state[id]))) await new Promise((r) => setTimeout(r, 100));
+    return ids.filter((id) => M.Samples.state[id] === 'error');
+  }
+
+  // One song, rendered as live playback would play it with Evolve and Auto-arrange off.
+  async function render(song, { seconds, volume, sr }) {
+    const ctx = new OfflineAudioContext(4, Math.ceil(seconds * sr), sr);
+    const eng = new M.Engine();
+    eng.init(ctx);
+    eng.setSong(song);
+    eng.playing = true;
+    eng.master.gain.value = volume * 0.9; // what setVolume() sets
+    // channels 3 and 4 carry the signal before the output limiter
+    const split = ctx.createChannelSplitter(2), merge = ctx.createChannelMerger(4);
+    eng.fade.connect(split); split.connect(merge, 0, 2); split.connect(merge, 1, 3); merge.connect(ctx.destination);
+    // playVoice releases nodes with setTimeout counted from ctx.currentTime, which stays at 0 while
+    // a whole render is scheduled up front; a render slower than real time would lose notes.
+    const st = window.setTimeout;
+    window.setTimeout = () => 0;
+    try { for (let n = 0, t = 0.1; t < seconds; n++) { eng.schedule(n, t); t += eng.stepDur(n); } } finally { window.setTimeout = st; }
+    const buf = await ctx.startRendering();
+    const ch = [0, 1, 2, 3].map((c) => buf.getChannelData(c)), skip = Math.round(5 * sr);
+    let peak = 0, prePeak = 0, nan = 0, sq = 0;
+    for (let c = 0; c < 4; c++) {
+      const d = ch[c];
+      for (let i = 0; i < d.length; i++) {
+        const x = d[i];
+        if (!Number.isFinite(x)) { nan++; continue; }
+        const a = Math.abs(x);
+        if (c < 2) { if (a > peak) peak = a; if (i >= skip) sq += x * x; } else if (a > prePeak) prePeak = a;
+      }
+    }
+    // limiter gain reduction in 400 ms blocks: the most it took off, and how often it took over 0.5 dB.
+    // The limiter's compressor looks 6 ms ahead, so its output lags the "pre" channels by that much.
+    const blk = Math.round(0.4 * sr), lag = eng.limiter ? Math.round(0.006 * sr) : 0;
+    let maxGr = 0, over = 0, blocks = 0;
+    for (let i = skip; i + blk + lag <= ch[0].length; i += blk, blocks++) {
+      let a = 0, b = 0;
+      for (let j = i; j < i + blk; j++) { a += ch[0][j + lag] ** 2 + ch[1][j + lag] ** 2; b += ch[2][j] ** 2 + ch[3][j] ** 2; }
+      const gr = a > 0 && b > 0 ? 10 * Math.log10(b / a) : 0;
+      if (gr > maxGr) maxGr = gr;
+      if (gr > 0.5) over++;
+    }
+    const body = (c) => ch[c].subarray(skip);
+    return {
+      floor: song.mood, seed: song.seed, title: song.title, nan,
+      peak: db(peak), prePeak: db(prePeak), rms: 10 * Math.log10(sq / (2 * (ch[0].length - skip))),
+      lufs: M.loudness([body(0), body(1)], sr), preLufs: M.loudness([body(2), body(3)], sr),
+      maxGr, limited: (100 * over) / blocks, trim: M.mixFor ? M.mixFor(song).trim : 0,
+    };
+  }
+
+  // Renders every floor; resolves to { rows, floors, spread }.
+  window.mixCheck = async function ({ seeds = 4, seconds = 40, volume = 1, target = -18, sr = 48000, floors } = {}) {
+    out.textContent = '';
+    const failed = await loadInstruments(sr);
+    if (failed.length) log('instruments that failed to load (synth stand-ins play): ' + failed.join(', '));
+    const rows = [];
+    log('floor   seed    peak  prePk    RMS   LUFS  preLU  maxGR  lim%  NaN  title');
+    for (const mood of M.MOODS.filter((m) => !floors || floors.includes(m.id))) {
+      for (let k = 1; k <= seeds; k++) {
+        const r = await render(M.generateSong('mix' + k, mood.id), { seconds, volume, sr });
+        rows.push(r);
+        log(`${r.floor.padEnd(7)} ${r.seed.padEnd(5)}${fmt(r.peak)}${fmt(r.prePeak)}${fmt(r.rms)}${fmt(r.lufs)}${fmt(r.preLufs)}${fmt(r.maxGr)}${fmt(r.limited, 6)}${String(r.nan).padStart(5)}  ${r.title}`);
+      }
+    }
+    const avg = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const floorsOut = [...new Set(rows.map((r) => r.floor))].map((id) => {
+      const rs = rows.filter((r) => r.floor === id), lu = rs.map((r) => r.lufs);
+      const mean = avg(lu);
+      return { floor: id, lufs: mean, min: Math.min(...lu), max: Math.max(...lu), peak: Math.max(...rs.map((r) => r.peak)), rms: avg(rs.map((r) => r.rms)), trim: +(rs[0].trim + target - mean).toFixed(1) };
+    });
+    const means = floorsOut.map((f) => f.lufs), spread = Math.max(...means) - Math.min(...means);
+    log('\nfloor     LUFS    min    max  maxPk    RMS  suggested trim (dB) for ' + target + ' LUFS');
+    for (const f of floorsOut) log(`${f.floor.padEnd(7)}${fmt(f.lufs)}${fmt(f.min)}${fmt(f.max)}${fmt(f.peak)}${fmt(f.rms)}${fmt(f.trim, 9)}`);
+    log(`\nspread between floors: ${spread.toFixed(2)} LU; highest peak ${Math.max(...rows.map((r) => r.peak)).toFixed(2)} dBFS; NaN samples ${rows.reduce((a, r) => a + r.nan, 0)}`);
+    return (window.mixResults = { rows, floors: floorsOut, spread });
+  };
+
+  document.getElementById('opts').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = (id) => +document.getElementById(id).value;
+    window.mixCheck({ seeds: v('seeds'), seconds: v('secs'), volume: v('vol'), target: v('target') }).catch((err) => log(String(err)));
+  });
+})();
+</script>
+</body>
+</html>
