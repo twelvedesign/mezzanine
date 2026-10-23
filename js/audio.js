@@ -437,11 +437,12 @@
 
   class Engine {
     constructor() {
-      this.ctx = null; this.playing = false; this.song = null; this.chords = [];
-      this.events = []; this.listeners = {}; this.n = 0; this.arr = {};
+      this.ctx = null; this.playing = false; this.song = null; this.chords = []; this.chordsB = [];
+      this.events = []; this.listeners = {}; this.n = 0; this.arr = {}; this.section = null;
     }
     on(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
-    emit(ev, data) { (this.listeners[ev] || []).forEach((fn) => fn(data)); }
+    // A listener's error (the page's, or the Conductor's) is reported but never stops the clock.
+    emit(ev, data) { for (const fn of this.listeners[ev] || []) { try { fn(data); } catch (e) { M.reportError(e); } } }
 
     init(offlineCtx) {
       if (this.ctx) return;
@@ -525,17 +526,26 @@
     setSong(song, { atBar = false } = {}) {
       if (atBar && this.playing) { this.pending = song; M.preloadSong(song); return; }
       this.song = song;
-      this.chords = M.buildChords(song); this.shifts = {};
+      this.buildChords();
       M.preloadSong(song);
       if (this.ctx) { this.applyFx(); this.applyMix(); this.setBed(); }
       this.emit('song', song);
     }
-    rebuild() { this.chords = M.buildChords(this.song); this.shifts = {}; this.emit('chords', this.chords); }
+    // The theme's chords and the bridge's.
+    buildChords() {
+      const song = this.song;
+      this.chords = M.buildChords(song); this.chordsB = M.buildChords(song, song.progB || song.prog); this.shifts = {};
+    }
+    rebuild() { this.buildChords(); this.emit('chords', this.chords); }
+    // The section playing (from the Conductor in js/evolve.js), or null for the plain loop, which
+    // then counts from bar `origin` (the bar line where the song's form was left).
+    setSection(sec, origin = 0) { this.section = sec; this.origin = sec ? sec.start : origin; this.emit('section', sec); }
 
-    // Octave shift that moves a part into its instrument's range (cached per voice).
+    // Octave shift that moves a part into its instrument's range (cached per voice). Theme and
+    // bridge share one shift, so a part never jumps an octave between sections.
     regShift(id, voice) {
       const key = id + ':' + voice + ':' + this.song.penta;
-      if (this.shifts[key] === undefined) this.shifts[key] = M.partShift(this.song, this.chords, id, (M.VOICES[voice] || {}).range);
+      if (this.shifts[key] === undefined) this.shifts[key] = M.partShift(this.song, this.chords.concat(this.chordsB), id, (M.VOICES[voice] || {}).range);
       return this.shifts[key];
     }
 
@@ -613,7 +623,7 @@
       if (this.ctx.state !== 'running') await this.ctx.resume();
       if (this.playing) return;
       this.playing = true;
-      this.n = 0; this.padHeld = null;
+      this.n = 0; this.origin = 0; this.padHeld = null;
       this.next = this.ctx.currentTime + 0.12;
       this.fade.gain.cancelScheduledValues(this.ctx.currentTime);
       this.fade.gain.setTargetAtTime(1, this.ctx.currentTime, 0.05);
@@ -672,11 +682,11 @@
       }
     }
 
-    // The bar's drum grid, with a fill on the last bar of every 8 (cached for the bar).
-    drumGrid(part, bar) {
-      if (bar % 8 !== 7 || !part.vary) return part.grid;
+    // The bar's drum grid, with a fill when `fill` says so (cached for the bar).
+    drumGrid(part, bar, fill) {
+      if (!fill || !part.vary) return part.grid;
       const f = this.fill;
-      if (!f || f.bar !== bar || f.src !== part.grid) this.fill = { bar, src: part.grid, grid: M.drumGridAt(this.song, part, bar) };
+      if (!f || f.bar !== bar || f.src !== part.grid) this.fill = { bar, src: part.grid, grid: M.drumGridAt(this.song, part, bar, true) };
       return this.fill.grid;
     }
     span(n, steps) { let d = 0; for (let k = 0; k < steps; k++) d += this.stepDur(n + k); return d; }
@@ -684,21 +694,33 @@
     schedule(n, t) {
       if (n % 16 === 0 && this.pending) {
         const s = this.pending; this.pending = null; this.setSong(s);
-        this.n = n = 0;
+        this.n = n = 0; this.origin = 0;
       }
       const song = this.song, ctx = this.ctx;
       const bar = Math.floor(n / 16), s16 = n % 16;
-      const ci = Math.floor(bar / song.hr) % this.chords.length;
-      const chord = this.chords[ci];
+      // sections and Evolve act at the bar line, before the bar's chord and notes are chosen
+      if (s16 === 0) this.emit('bar', { bar, t });
+      // inside a section, steps count from its start, and the bridge plays its own chords
+      const sec = this.section, bridge = !!sec && sec.harmony === 'B';
+      const chords = bridge ? this.chordsB : this.chords;
+      const ln = n - (sec ? sec.start : this.origin || 0) * 16, lbar = Math.floor(ln / 16);
       if (s16 === 0) {
-        this.emit('bar', { bar, t });
-        if (bar % song.hr === 0) this.events.push({ t, type: 'chord', ci, chord });
+        // a new section (or the end of the form) always shows, with the chord it starts on
+        const changed = sec !== this.shown;
+        this.shown = sec;
+        if (changed) this.events.push({ t, type: 'section', sec });
+        if (changed || lbar % song.hr === 0) {
+          const ci = Math.floor(lbar / song.hr) % chords.length;
+          this.events.push({ t, type: 'chord', ci, chord: chords[ci], bridge });
+        }
         if (this.events.length > 3000) this.events.splice(0, 1500);
       }
       const visual = !document.hidden;
-      if (visual) this.events.push({ t, type: 'step', n });
+      if (visual) this.events.push({ t, type: 'step', n: ln });
       // pad and keys share out the register while both are sounding
       const split = ['pad', 'keys'].every((id) => this.audible(id) && this.arr[id] !== 0);
+      // drum fills: the last bar of every 8, and a section's last bar
+      const fill = lbar % 8 === 7 || (!!sec && lbar === sec.bars - 1);
 
       const held = this.padHeld;
       const ringing = (voicing) => held && held.until > t + 0.05 && held.notes === voicing;
@@ -706,10 +728,10 @@
       for (const meta of M.PARTS) {
         const id = meta.id, part = song.parts[id];
         if (!meta.len || !this.audible(id) || this.arr[id] === 0) continue;
-        const out = this.parts[id].input, step = n % meta.len;
-        const hits = M.partStep(song, this.chords, id, n, {
+        const out = this.parts[id].input, step = ln % meta.len;
+        const hits = M.partStep(song, chords, id, ln, {
           rand: Math.random, split, ringing,
-          grid: id === 'drums' ? this.drumGrid(part, bar) : null,
+          grid: id === 'drums' ? this.drumGrid(part, bar, fill) : null,
           shift: id === 'drums' ? 0 : this.regShift(id, part.voice), range: (M.VOICES[part.voice] || {}).range,
         });
         for (const { row, v, notes, steps, jitter, voicing } of hits) {
@@ -755,6 +777,8 @@
     }
   }
   M.Engine = Engine;
+  // Errors caught in engine listeners still reach the console, outside the scheduler's call.
+  M.reportError = (e) => setTimeout(() => { throw e; });
   M.preloadSong = (song) => {
     for (const p of Object.values(song.parts)) { const v = M.VOICES[p.voice]; if (v && v.kind === 'sample') M.Samples.ensure(v.inst); }
   };

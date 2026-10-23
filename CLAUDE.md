@@ -4,7 +4,8 @@ Generative ambient and elevator music in the browser. See README.md for features
 
 ## Ground rules
 - No dependencies and no bundler. Scripts are classic `<script>` files sharing `window.M`, loaded in this order: core.js, audio.js, evolve.js, export.js, render.js, ui.js, device.js. A new script also belongs in the `SHELL` list in `sw.js`. The page must keep working when opened from `file://`.
-- `js/core.js` and `js/export.js` stay pure: no DOM and no Web Audio, so they can be tested in Node. `js/evolve.js` needs only an object with `on`, `rebuild` and `setArrangement`.
+- `js/core.js` and `js/export.js` stay pure: no DOM and no Web Audio, so they can be tested in Node. `js/evolve.js` needs only an object with `on`, `rebuild`, `setArrangement` and `setSection`.
+- Song form lives in `js/evolve.js`: `planChapter` and `sectionBars` plan each round, and the `Conductor` walks it and tells the engine the section through `setSection`. Inside a section the engine counts steps from its start, and bridge sections play `song.progB` (built as `engine.chordsB`). Form decisions draw from `M.rng(seed + ':' + floor + ':' + tag)`, never `Math.random`, so a song replays the same journey.
 - Musicality comes first. Grid rows are relative to the current chord (bass: R/3/5/8/approach; arp: chord tones rising; melody: scale-degree offsets −3..+8 from the chord root). Keep new generators chord-aware.
 - `M.partStep` in `js/core.js` decides which notes a part plays on a step, for both `Engine.schedule` and the MIDI export (`M.songNotes`). Change note choice, lengths, ties, ranges or fills there, so live audio and MIDI stay the same.
 - Song codes (`M.encodeSong`/`M.decodeSong`) are a public format. Saved songs on users' shelves must keep loading, so add fields with defaults and never rename them.

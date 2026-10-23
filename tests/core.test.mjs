@@ -114,6 +114,81 @@ test('bad song codes explain themselves', () => {
   assert.throws(() => M.decodeSong('hello'), /Song codes start with/);
 });
 
+/* ---------- The bridge ---------- */
+test('bridges contrast with the theme and lead home', () => {
+  for (const mood of M.MOODS) {
+    for (const seed of SEEDS.slice(0, 30)) {
+      const s = M.generateSong(seed, mood.id);
+      const A = s.prog, B = s.progB, home = A[0].d;
+      assert.equal(B.length, Math.min(4, Math.max(2, A.length)), `${mood.id}/${seed} bridge length`);
+      for (const c of B) {
+        assert.ok(!M.isDim(s.mode, c.d), 'no diminished chords');
+        assert.ok(M.EXTS.includes(c.e));
+      }
+      assert.notEqual(B[0].d, home, 'starts away from home');
+      // a strong move home (V–I, IV–I, ♭VII–i…) whenever there is a choice of them; iii has none
+      const strong = [0, 1, 2, 3, 4, 5, 6].filter((d) => !M.isDim(s.mode, d) && d !== home && (M.NEXT[d][home] || 0) >= 2);
+      assert.ok((M.NEXT[B[B.length - 1].d][home] || 0) >= (strong.length >= 2 ? 2 : 0.5), 'the last chord leads back to the theme');
+      assert.deepEqual(M.generateSong(seed, mood.id).progB, B, 'seeded');
+    }
+  }
+  // any theme the chord editor allows still gets a bridge, even one starting on iii
+  for (const first of [0, 1, 2, 3, 4, 5]) {
+    const B = M.genBridge(M.rng('edit' + first), M.MOOD.lobby, 'ionian', [{ d: first, e: '7' }]);
+    assert.equal(B.length, 2);
+    assert.notEqual(B[0].d, first);
+    assert.ok(B.every((c) => !M.isDim('ionian', c.d)));
+  }
+});
+
+test('the bridge chords are built like the theme chords', () => {
+  const s = M.generateSong('bc', 'rain');
+  const B = M.buildChords(s, s.progB);
+  assert.equal(B.length, s.progB.length);
+  B.forEach((c, i) => assert.equal(c.name, M.chordName(s.key, s.mode, s.progB[i].d, s.progB[i].e)));
+  assert.deepEqual(M.buildChords(s), M.buildChords(s, s.prog));
+});
+
+test('song codes keep the bridge, and codes without one get the same bridge every time', () => {
+  const s = M.generateSong('br1', 'lobby');
+  s.progB = [{ d: 3, e: '9' }, { d: 1, e: '7' }, { d: 4, e: 'sus4' }];
+  s.edited = true;
+  assert.deepEqual(M.decodeSong(M.encodeSong(s)).progB, s.progB);
+  // a code written before the bridge existed, with an edited theme starting on vi
+  const json = JSON.parse(decodeURIComponent(escape(atob(M.encodeSong(s).slice(3).replace(/-/g, '+').replace(/_/g, '/')))));
+  delete json.pb; json.o = 'ionian'; json.p = '5:7,3:7,0:9,4:7';
+  const old = 'MZ1' + btoa(unescape(encodeURIComponent(JSON.stringify(json)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const a = M.decodeSong(old), b = M.decodeSong(old);
+  assert.deepEqual(a.progB, b.progB);
+  assert.notEqual(a.progB[0].d, 5, 'contrasts with the decoded theme');
+  assert.ok((M.NEXT[a.progB[a.progB.length - 1].d][5] || 0) >= 2);
+  // short codes rebuild the same bridge from the seed
+  assert.deepEqual(M.decodeSong('lobby.br1').progB, M.generateSong('br1', 'lobby').progB);
+});
+
+test('unedited songs are unchanged by the bridge', () => {
+  // FNV-1a over 24 generated songs without their bridge, captured before the bridge existed
+  let h = 0x811c9dc5;
+  for (const mood of M.MOODS) for (const seed of ['fx1', 'fx2', 'fx3']) {
+    const s = M.generateSong(seed, mood.id);
+    delete s.progB;
+    const str = JSON.stringify(s);
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  }
+  assert.equal(h.toString(16), '966ebbc9');
+});
+
+test('re-rolls repeat exactly with a seeded random source', () => {
+  const a = M.generateSong('rr', 'cafe'), b = M.generateSong('rr', 'cafe');
+  M.regenProgression(a, M.rng('same')); M.regenProgression(b, M.rng('same'));
+  assert.deepEqual([a.prog, a.progB], [b.prog, b.progB]);
+  assert.notEqual(a.progB[0].d, a.prog[0].d, 'the bridge is rewritten to contrast with the new theme');
+  M.varyMelody(a, M.rng('m')); M.varyMelody(b, M.rng('m'));
+  assert.deepEqual(a.parts.melody.grid, b.parts.melody.grid);
+  M.regenPart(a, 'arp', M.rng('p')); M.regenPart(b, 'arp', M.rng('p'));
+  assert.deepEqual(a.parts.arp.grid, b.parts.arp.grid);
+});
+
 test('evolution keeps grids well-formed', () => {
   const s = M.generateSong('evo', 'lobby');
   for (let i = 0; i < 200; i++) {
@@ -221,6 +296,21 @@ test('drum fills change only the second half of the bar, gently', () => {
       kinds.add(JSON.stringify(fill) !== before);
     }
     assert.ok(kinds.has(true), `${mood.id} fills differ from the plain pattern`);
+  }
+});
+
+test('melody breathing reaches every chord, the last one included', () => {
+  for (const mood of M.MOODS) {
+    for (const seed of SEEDS.slice(0, 30)) {
+      const s = M.generateSong(seed, mood.id);
+      const chords = M.buildChords(s);
+      const loop = chords.length * s.hr;
+      const heard = new Set();
+      for (let n = 0; n < 4 * loop * 16; n++) {
+        if (M.partStep(s, chords, 'melody', n).length) heard.add(Math.floor(Math.floor(n / 16) / s.hr) % chords.length);
+      }
+      assert.equal(heard.size, chords.length, `${mood.id}/${seed}: the melody sounds over every chord`);
+    }
   }
 });
 

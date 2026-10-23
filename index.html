@@ -71,6 +71,7 @@
         <div class="readouts mono">
           <span id="keyRead">C Major</span>
           <span id="bpmRead">90 BPM</span>
+          <span id="secRead" hidden></span>
           <span id="barRead">BAR 001 · 1</span>
         </div>
       </div>
@@ -89,7 +90,7 @@
       <div class="switches">
         <label class="switch" for="realChk"><input type="checkbox" id="realChk" checked><span class="knob" aria-hidden="true"></span><span><b>Recorded instruments</b><small>Piano, Rhodes, vibraphone, strings and more. Off uses synthesizers.</small></span></label>
         <label class="switch" for="evolveChk"><input type="checkbox" id="evolveChk" checked><span class="knob" aria-hidden="true"></span><span><b>Evolve</b><small>Patterns, chords and key slowly rewrite themselves</small></span></label>
-        <label class="switch" for="arrangeChk"><input type="checkbox" id="arrangeChk" checked><span class="knob" aria-hidden="true"></span><span><b>Auto-arrange</b><small>Parts rest and return every eight bars</small></span></label>
+        <label class="switch" for="arrangeChk"><input type="checkbox" id="arrangeChk" checked><span class="knob" aria-hidden="true"></span><span><b>Auto-arrange</b><small>The song moves through an intro, theme, bridge, breather and return</small></span></label>
       </div>
       <p class="blurb" id="moodBlurb"></p>
     </aside>
@@ -109,7 +110,10 @@
         <button id="progDice" class="btn" type="button">Re-roll chords</button>
       </div>
     </div>
-    <div class="prog" id="prog"></div>
+    <div class="prog-rows">
+      <div class="prog-row"><span class="mini">Theme</span><div class="prog" id="prog"></div></div>
+      <div class="prog-row" id="progBRow" title="The bridge plays when Auto-arrange is on"><span class="mini">Bridge</span><div class="prog" id="progB"></div></div>
+    </div>
     <div class="prog-editor" id="progEditor" hidden>
       <div class="pe-row"><span class="mini">Chord</span><div class="pe-btns" id="peDegs"></div></div>
       <div class="pe-row"><span class="mini">Colour</span><div class="pe-btns" id="peExts"></div></div>
@@ -191,7 +195,7 @@
     </div>
     <div class="lib-col export-col" id="exportCol">
       <h3>Export</h3>
-      <p class="hint">Save the current song as a file. The WAV is rendered faster than real time and keeps evolving and arranging itself when those switches are on. The MIDI file has one track per part, for Logic Pro or any DAW.</p>
+      <p class="hint">Save the current song as a file. The WAV is rendered faster than real time and keeps evolving and arranging itself when those switches are on. The MIDI file holds the theme's loop as written, one track per part, for Logic Pro or any DAW.</p>
       <div class="code-row">
         <select id="wavLen" aria-label="WAV length">
           <option value="2">2 minutes</option>

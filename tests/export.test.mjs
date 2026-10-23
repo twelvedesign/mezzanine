@@ -127,6 +127,10 @@ test('MIDI timing follows swing and Breathe', () => {
   s.parts.melody.on = true; s.parts.melody.breathe = true;
   const mel = M.songNotes(s, { bars: 4 }).tracks.find((t) => t.id === 'melody').notes;
   assert.ok(mel.every((n) => Math.floor(n.tick / 3840) % 2 === 0), 'Breathe rests every other two bars');
+  // a 4-bar loop: the second pass rests first, so the answer phrase lands on the last chord
+  s.prog = [0, 5, 1, 4].map((d) => ({ d, e: '7' })); s.hr = 1;
+  const bars = M.songNotes(s, { bars: 8 }).tracks.find((t) => t.id === 'melody').notes.map((n) => Math.floor(n.tick / 1920));
+  assert.deepEqual([...new Set(bars)], [0, 1, 6, 7]);
 });
 
 test('MIDI skips muted parts, and Vary only changes things when a random source is given', () => {
@@ -174,6 +178,105 @@ test('MIDI plays the same notes as the engine', () => {
       assert.deepEqual(tr.notes.map((n) => [n.midi, n.vel]), heard[tr.id], `${mood.id} ${seed} ${tr.id}`);
     }
   }
+});
+
+// Runs Engine.schedule for `bars` bars with stubbed voices and a stubbed context, recording every
+// note and drum hit with its bar. `setup(engine)` runs before the first step (attach a Conductor,
+// set a section, add a 'bar' listener).
+function engineRun(song, bars, setup = () => {}) {
+  const e = new M.Engine(), notes = [], drums = [];
+  let bar = 0;
+  const saved = [M.preloadSong, M.playVoice, M.playDrum, globalThis.document];
+  M.preloadSong = () => {};
+  M.playVoice = (ctx, out, voice, midi) => notes.push({ part: out, midi, bar });
+  M.playDrum = (ctx, out, row) => drums.push({ row, bar });
+  globalThis.document = { hidden: true };
+  try {
+    const param = { value: 0, setTargetAtTime() {} };
+    e.setSong(song);
+    e.ctx = { currentTime: 0 };
+    e.parts = new Proxy({}, { get: (_, id) => ({ input: id, vol: { gain: param }, arr: { gain: param } }) });
+    setup(e);
+    let t = 0;
+    for (let n = 0; n < bars * 16; n++) { bar = Math.floor(n / 16); e.schedule(n, t); t += e.stepDur(n); }
+  } finally { [M.preloadSong, M.playVoice, M.playDrum, globalThis.document] = saved; }
+  return { e, notes, drums };
+}
+
+test('the engine plays the bridge chords in bridge sections', () => {
+  const s = M.generateSong('eb', 'lobby');
+  const secs = [];
+  const { e, notes } = engineRun(s, 90, (eng) => {
+    eng.on('section', (x) => x && secs.push(x));
+    new M.Evolve.Conductor(eng, { evolve: () => false, arrange: () => true });
+  });
+  const bridge = secs.find((x) => x.kind === 'bridge');
+  assert.ok(bridge && bridge.start + bridge.bars <= 90, 'the first bridge falls inside the run');
+  const sh = e.regShift('pad', s.parts.pad.voice), range = M.VOICES[s.parts.pad.voice].range;
+  const voicings = (cs) => new Set(cs.flatMap((c) => [c.pad, c.padSplit]).map((v) => v.map((m) => M.foldInto(m + sh, range)).join()));
+  const A = voicings(e.chords), B = voicings(e.chordsB);
+  const struck = {};
+  for (const n of notes) if (n.part === 'pad') (struck[n.bar] = struck[n.bar] || []).push(n.midi);
+  let outsideTheme = 0;
+  for (const [b, ms] of Object.entries(struck)) {
+    const inBridge = b >= bridge.start && b < bridge.start + bridge.bars;
+    const v = [...new Set(ms)].join();
+    assert.ok((inBridge ? B : A).has(v), `bar ${b} strikes a ${inBridge ? 'bridge' : 'theme'} chord`);
+    if (inBridge && !A.has(v)) outsideTheme++;
+  }
+  assert.ok(outsideTheme > 0, 'the bridge sounds different from the theme');
+  assert.ok(e.events.some((x) => x.type === 'section' && x.sec && x.sec.kind === 'bridge'), 'the page hears when the bridge starts');
+});
+
+test('an error in a page listener never stops the engine playing the bar', () => {
+  const s = M.generateSong('safe', 'lobby');
+  const caught = [], saved = M.reportError;
+  M.reportError = (e) => caught.push(e.message);
+  try {
+    const { notes } = engineRun(s, 2, (eng) => eng.on('bar', () => { throw new Error('page bug'); }));
+    assert.ok(notes.length > 0, 'the bars still played');
+    assert.deepEqual(caught, ['page bug', 'page bug'], 'and the error is still reported');
+  } finally { M.reportError = saved; }
+});
+
+test('turning Auto-arrange off mid-bridge returns to the theme from its first chord at the next bar line', () => {
+  const s = M.generateSong('off', 'lobby');
+  let arrange = true, offAt = null;
+  const secs = [];
+  const { e, notes } = engineRun(s, 60, (eng) => {
+    eng.on('section', (x) => x && secs.push(x));
+    new M.Evolve.Conductor(eng, { evolve: () => false, arrange: () => arrange });
+    eng.on('bar', ({ bar }) => {
+      const br = secs.find((x) => x.kind === 'bridge');
+      if (br && offAt == null && bar === br.start + 1) { arrange = false; offAt = bar + 1; }
+    });
+  });
+  assert.ok(offAt && offAt % (s.prog.length * s.hr) !== 0, 'switched off where the plain loop would be mid-progression');
+  const ev = e.events.filter((x) => x.type === 'chord' || x.type === 'section');
+  const after = ev.slice(ev.findIndex((x) => x.type === 'chord' && x.bridge)).find((x) => !(x.type === 'chord' && x.bridge));
+  assert.equal(after.type, 'section'); assert.equal(after.sec, null, 'the page hears the form end');
+  const next = ev[ev.indexOf(after) + 1];
+  assert.deepEqual([next.type, next.bridge, next.ci], ['chord', false, 0], 'the theme starts again from its first chord');
+  const sh = e.regShift('pad', s.parts.pad.voice), range = M.VOICES[s.parts.pad.voice].range;
+  const first = [e.chords[0].pad, e.chords[0].padSplit].map((v) => v.map((m) => M.foldInto(m + sh, range)).join());
+  const struck = [...new Set(notes.filter((n) => n.part === 'pad' && n.bar === offAt).map((n) => n.midi))].join();
+  assert.ok(first.includes(struck), `bar ${offAt} strikes the theme's first chord, not ${struck}`);
+});
+
+test('the chord shown is the chord that plays, even when Evolve changes the key on that bar', () => {
+  const s = M.generateSong('show', 'lobby');
+  const { e } = engineRun(s, 6, (eng) => eng.on('bar', ({ bar }) => { if (bar === 4) { s.key = M.mod(s.key + 5, 12); eng.rebuild(); } }));
+  const shown = e.events.filter((x) => x.type === 'chord')[4 / s.hr];
+  assert.equal(shown.chord.name, e.chords[shown.ci].name);
+});
+
+test("a section's last bar gets a drum fill", () => {
+  const s = M.generateSong('secfill', 'cafe');
+  for (const id of ['pad', 'keys', 'bass', 'arp', 'melody']) s.parts[id].on = false;
+  s.parts.drums.on = true; s.parts.drums.vary = 0.4;
+  const { drums } = engineRun(s, 6, (eng) => eng.setSection({ kind: 'bridge', label: 'Bridge', harmony: 'B', chapter: 0, index: 3, start: 0, bars: 6 }));
+  const rows = (b) => drums.filter((d) => d.bar === b).map((d) => d.row).join();
+  assert.notEqual(rows(5), rows(1), 'the last bar of a 6-bar section is a fill');
 });
 
 test('MIDI pad chords tie across a 2-bar chord instead of re-striking', () => {
@@ -295,42 +398,4 @@ test('evolve rewrites one playing part, or lets the bar pass', () => {
   s.parts.drums.on = false;
   assert.equal(M.Evolve.evolve(s, eng, 8, seq(0.9)), null, 'nothing to change when every part is muted');
   assert.equal(eng.rebuilds, 0);
-});
-
-test('arrange keeps energy between 1 and 3 and pad and texture always play', () => {
-  const r = M.rng('arr');
-  let energy = 3;
-  const seen = new Set();
-  for (let i = 0; i < 500; i++) {
-    const res = M.Evolve.arrange(energy, () => r.next());
-    assert.ok(Math.abs(res.energy - energy) <= 1);
-    energy = res.energy;
-    seen.add(energy);
-    assert.equal(res.arr.pad, 1); assert.equal(res.arr.texture, 1);
-    for (const p of M.PARTS) {
-      if (!M.Evolve.LAYERS[energy].includes(p.id) && p.id !== 'melody') assert.equal(res.arr[p.id], 0, `${p.id} plays at energy ${energy}`);
-    }
-  }
-  assert.deepEqual([...seen].sort(), [1, 2, 3]);
-  assert.deepEqual(M.Evolve.arrange(3, seq(0.9)).arr, Object.fromEntries(M.PARTS.map((p) => [p.id, 1])));
-});
-
-test('conductor acts every 8 bars and follows its switches', () => {
-  const s = M.generateSong('evo3', 'lobby');
-  const eng = stubEngine(s);
-  const changes = [];
-  let ev = true, ar = true;
-  const c = new M.Evolve.Conductor(eng, { evolve: () => ev, arrange: () => ar, rand: seq(0.9, 0.95, 0.5), onChange: (x) => changes.push(x) });
-  for (const bar of [0, 1, 7, 9]) eng.listeners.bar({ bar });
-  assert.equal(changes.length, 0);
-  eng.listeners.bar({ bar: 8 });
-  assert.ok(changes.some((x) => x.lane), 'evolved a part');
-  assert.ok(changes.some((x) => x.arr), 'arranged');
-  assert.ok(eng.arr);
-  ev = false; ar = false; changes.length = 0;
-  eng.listeners.bar({ bar: 16 });
-  assert.equal(changes.length, 0);
-  c.reset();
-  assert.equal(c.energy, 3);
-  assert.deepEqual(eng.arr, {});
 });

@@ -23,13 +23,13 @@
   const engine = new M.Engine();
   M.engine = engine;
   let song = null;
-  let selChord = -1;
+  let sel = null; // the chord open in the editor: { bridge, i }
   const lanes = {};
 
   /* ---------- Song lifecycle ---------- */
   function loadSong(s, opts = {}) {
     song = s;
-    selChord = -1;
+    sel = null;
     engine.setSong(s, { atBar: !!opts.atBar });
     if (!opts.atBar || !engine.playing) resetArrangement();
     renderAll();
@@ -89,22 +89,27 @@
     document.title = 'Mezzanine';
   }
 
+  // The theme's chords and, below them, the bridge's; either row opens the same editor.
   function renderProg() {
-    const box = $('#prog');
-    box.innerHTML = '';
-    const chords = M.buildChords(song);
-    chords.forEach((c, i) => {
-      box.append(h('button', {
-        class: 'chip' + (i === selChord ? ' sel' : ''), type: 'button', 'data-i': i,
-        'aria-label': 'Edit chord ' + (i + 1) + ', ' + c.name,
-        onclick: () => { selChord = selChord === i ? -1 : i; renderProg(); },
-      }, h('span', { class: 'cn' }, c.name), h('span', { class: 'cr' }, c.roman + ' · ' + M.EXT_LABEL[song.prog[i].e])));
-    });
+    if (sel && !selList()[sel.i]) sel = null; // its chord went (Evolve wrote new chords)
+    for (const [box, list, bridge] of [[$('#prog'), song.prog, false], [$('#progB'), song.progB, true]]) {
+      box.innerHTML = '';
+      M.buildChords(song, list).forEach((c, i) => {
+        const open = !!sel && sel.bridge === bridge && sel.i === i;
+        box.append(h('button', {
+          class: 'chip' + (open ? ' sel' : ''), type: 'button', 'data-i': i,
+          'aria-label': 'Edit ' + (bridge ? 'bridge' : 'theme') + ' chord ' + (i + 1) + ', ' + c.name,
+          onclick: () => { sel = open ? null : { bridge, i }; renderProg(); },
+        }, h('span', { class: 'cn' }, c.name), h('span', { class: 'cr' }, c.roman + ' · ' + M.EXT_LABEL[list[i].e])));
+      });
+    }
+    $('#progBRow').classList.toggle('idle', !$('#arrangeChk').checked);
+    markNow();
     $('#hrSel').value = String(song.hr);
     const ed = $('#progEditor');
-    ed.hidden = selChord < 0;
-    if (selChord < 0) return;
-    const cur = song.prog[selChord];
+    ed.hidden = !sel;
+    if (!sel) return;
+    const list = selList(), cur = list[sel.i];
     const degs = $('#peDegs'); degs.innerHTML = '';
     for (let d = 0; d < 7; d++) {
       degs.append(h('button', {
@@ -116,8 +121,16 @@
     for (const e of M.EXTS) {
       exts.append(h('button', { class: 'btn' + (cur.e === e ? ' on' : ''), type: 'button', onclick: () => { cur.e = e; changedChords(); } }, M.EXT_LABEL[e]));
     }
-    $('#peDel').disabled = song.prog.length <= 1;
-    $('#peAdd').disabled = song.prog.length >= 8;
+    $('#peDel').disabled = list.length <= 1;
+    $('#peAdd').disabled = list.length >= 8;
+  }
+  const selList = () => (sel.bridge ? song.progB : song.prog);
+  // The chord sounding now, in whichever progression is playing.
+  const curChord = () => (engine.curBridge ? engine.chordsB : engine.chords)[engine.curChord || 0] || engine.chords[0];
+  function markNow() {
+    for (const [rowSel, bridge] of [['#prog', false], ['#progB', true]]) {
+      document.querySelectorAll(rowSel + ' .chip').forEach((c, i) => c.classList.toggle('now', engine.playing && !!engine.curBridge === bridge && i === engine.curChord));
+    }
   }
   function changedChords() {
     engine.rebuild();
@@ -188,7 +201,7 @@
       btns.push(h('button', { class: 'tbtn', type: 'button', title: 'Clear pattern', 'aria-label': 'Clear ' + meta.name, onclick: () => { song.parts[id].grid.forEach((r) => r.fill(0)); syncLane(id); touched(); } }, 'Clear'));
     }
     if (id === 'melody') {
-      L.breathe = h('button', { class: 'tbtn', type: 'button', title: 'Play two bars, rest two bars', onclick: () => { song.parts.melody.breathe = !song.parts.melody.breathe; syncLane(id); touched(); } }, 'Breathe');
+      L.breathe = h('button', { class: 'tbtn', type: 'button', title: 'Play two bars, rest two bars, taking turns across the loop', onclick: () => { song.parts.melody.breathe = !song.parts.melody.breathe; syncLane(id); touched(); } }, 'Breathe');
       btns.push(L.breathe);
     }
     L.vol = h('input', { type: 'range', min: 0, max: 1, step: 0.01, id: 'vol-' + id, 'aria-label': meta.name + ' volume' });
@@ -278,7 +291,7 @@
   }
 
   function preview(id, row) {
-    const ctx = engine.ctx, t = ctx.currentTime + 0.01, ch = engine.chords[engine.curChord || 0] || engine.chords[0];
+    const ctx = engine.ctx, t = ctx.currentTime + 0.01, ch = curChord();
     const out = engine.parts[id].input, voice = song.parts[id].voice;
     if (id === 'drums') return M.playDrum(ctx, out, row, t, 0.7);
     const notes = id === 'pad' ? ch.pad : id === 'keys' ? ch.keys : id === 'bass' ? [ch.bass[row]] : id === 'arp' ? [ch.arp[row]] : [M.melodyMidi(song, ch, row)];
@@ -355,28 +368,34 @@
     $('#playBtn').classList.toggle('on', on);
     $('#playBtn').setAttribute('aria-label', on ? 'Stop' : 'Play');
     $('#rack').classList.toggle('playing', on);
-    if (!on) { document.querySelectorAll('.chip.now').forEach((c) => c.classList.remove('now')); renderInfo(); }
+    if (!on) { markNow(); showSection(null); renderInfo(); }
   });
   engine.on('song', (s) => {
     if (s !== song) return;
     syncAllButtons();
   });
-  engine.on('chords', () => { renderProg(); updateLabels(engine.chords[engine.curChord || 0] || engine.chords[0]); });
+  engine.on('chords', () => { renderProg(); updateLabels(curChord()); });
 
-  // Evolve and auto-arrange live in evolve.js; the page only reacts to what changed.
+  // The song's sections, Evolve and auto-arrange live in evolve.js; the page only reacts to what changed.
   const conductor = new M.Evolve.Conductor(engine, {
     evolve: () => $('#evolveChk').checked,
     arrange: () => $('#arrangeChk').checked,
     onChange(res) {
+      if (res.section) flash(res.section.label.toLowerCase() + (res.msg ? ' · ' + res.msg : ''));
+      else if (res.msg) flash(res.msg);
       if (!res.msg) return;
-      flash(res.msg);
       if (res.key) renderMixer();
       if (res.chords) renderInfo();
       if (res.lane) syncLane(res.lane);
       touched();
     },
   });
-  function resetArrangement() { conductor.reset(); }
+  function resetArrangement() { conductor.reset(); showSection(null); }
+  function showSection(sec) {
+    const el = $('#secRead');
+    el.hidden = !sec;
+    el.textContent = sec ? sec.label : '';
+  }
   engine.on('arrange', (arr) => {
     for (const meta of M.PARTS) {
       const L = lanes[meta.id];
@@ -403,12 +422,14 @@
       const bar = Math.floor(n / 16) + 1, beat = Math.floor((n % 16) / 4) + 1;
       $('#barRead').textContent = 'BAR ' + String(bar).padStart(3, '0') + ' · ' + beat;
     } else if (ev.type === 'chord') {
-      engine.curChord = ev.ci;
+      engine.curChord = ev.ci; engine.curBridge = ev.bridge;
       $('#chordName').textContent = ev.chord.name;
-      $('#chordRoman').textContent = ev.chord.roman + ' · chord ' + (ev.ci + 1) + ' of ' + engine.chords.length;
-      document.querySelectorAll('#prog .chip').forEach((c, i) => c.classList.toggle('now', i === ev.ci));
+      $('#chordRoman').textContent = ev.chord.roman + ' · ' + (ev.bridge ? 'bridge chord ' : 'chord ') + (ev.ci + 1) + ' of ' + (ev.bridge ? engine.chordsB : engine.chords).length;
+      markNow();
       updateLabels(ev.chord);
       viz.chord(ev.chord);
+    } else if (ev.type === 'section') {
+      showSection(ev.sec);
     } else if (ev.type === 'note') {
       const L = lanes[ev.part];
       if (L && L.cellEls && L.cellEls[ev.row]) {
@@ -672,15 +693,20 @@
   /* ---------- Controls ---------- */
   $('#playBtn').addEventListener('click', togglePlay);
   $('#newBtn').addEventListener('click', () => { newSong(); if (!engine.playing) togglePlay(); });
-  $('#progDice').addEventListener('click', () => { M.regenProgression(song); selChord = -1; changedChords(); flash('new chord progression'); });
+  $('#progDice').addEventListener('click', () => { M.regenProgression(song); sel = null; changedChords(); flash('new chords for the theme and bridge'); });
   $('#hrSel').addEventListener('change', (e) => { song.hr = +e.target.value; changedChords(); });
-  $('#peAdd').addEventListener('click', () => { const c = song.prog[selChord]; song.prog.splice(selChord + 1, 0, { d: M.mod(c.d + 3, 7), e: c.e }); if (M.isDim(song.mode, song.prog[selChord + 1].d)) song.prog[selChord + 1].d = 4; selChord++; changedChords(); });
-  $('#peDel').addEventListener('click', () => { song.prog.splice(selChord, 1); selChord = Math.min(selChord, song.prog.length - 1); changedChords(); });
-  $('#peClose').addEventListener('click', () => { selChord = -1; renderProg(); });
+  $('#peAdd').addEventListener('click', () => {
+    const list = selList(), c = list[sel.i];
+    list.splice(sel.i + 1, 0, { d: M.mod(c.d + 3, 7), e: c.e });
+    if (M.isDim(song.mode, list[sel.i + 1].d)) list[sel.i + 1].d = 4;
+    sel.i++; changedChords();
+  });
+  $('#peDel').addEventListener('click', () => { const list = selList(); list.splice(sel.i, 1); sel.i = Math.min(sel.i, list.length - 1); changedChords(); });
+  $('#peClose').addEventListener('click', () => { sel = null; renderProg(); });
   $('#keySel').addEventListener('change', (e) => { song.key = +e.target.value; changedChords(); });
   $('#modeSel').addEventListener('change', (e) => {
     song.mode = e.target.value;
-    song.prog.forEach((c) => { if (M.isDim(song.mode, c.d)) c.d = M.mod(c.d + 2, 7); });
+    song.prog.concat(song.progB).forEach((c) => { if (M.isDim(song.mode, c.d)) c.d = M.mod(c.d + 2, 7); });
     changedChords();
   });
   const bindRange = (id, apply, fmt) => $('#' + id).addEventListener('input', (e) => { const v = +e.target.value; $('#' + id + 'Out').textContent = fmt(v); apply(v); });
@@ -690,7 +716,7 @@
   bindRange('echo', (v) => { song.fx.echo = v; engine.applyFx(); remember(); }, pct);
   bindRange('warmth', (v) => { song.fx.warmth = v; engine.applyFx(); remember(); }, pct);
   bindRange('volume', (v) => { engine.setVolume(v); store.set('volume', v); }, pct);
-  $('#pentaChk').addEventListener('change', (e) => { song.penta = e.target.checked; updateLabels(engine.chords[engine.curChord || 0] || engine.chords[0]); touched(); });
+  $('#pentaChk').addEventListener('change', (e) => { song.penta = e.target.checked; updateLabels(curChord()); touched(); });
   $('#evolveChk').addEventListener('change', (e) => store.set('evolve', e.target.checked));
   $('#realChk').addEventListener('change', (e) => {
     store.set('real', e.target.checked);
@@ -700,7 +726,12 @@
     touched();
     flash(e.target.checked ? 'recorded instruments' : 'synthesizers');
   });
-  $('#arrangeChk').addEventListener('change', (e) => { store.set('arrange', e.target.checked); if (!e.target.checked) resetArrangement(); });
+  $('#arrangeChk').addEventListener('change', (e) => {
+    store.set('arrange', e.target.checked);
+    $('#progBRow').classList.toggle('idle', !e.target.checked);
+    // while playing, the Conductor leaves the form at the next bar line
+    if (!e.target.checked && !engine.playing) resetArrangement();
+  });
 
   function applyTheme(t) {
     if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');

@@ -144,9 +144,10 @@
     return best || pcs.map((p) => lo + mod(p - lo, 12));
   };
 
-  // Everything the engine needs to play one chord of the progression.
-  M.buildChords = function (song) {
-    const { key, mode, prog } = song;
+  // Everything the engine needs to play one chord of the progression (the theme's, or the
+  // bridge's when `prog` is song.progB).
+  M.buildChords = function (song, prog = song.prog) {
+    const { key, mode } = song;
     let prevPad = null, prevKeys = null, prevPadS = null, prevKeysS = null;
     const chords = prog.map((c) => ({ c }));
     // two passes so the first chord voice-leads from the last one (the loop is seamless)
@@ -250,12 +251,22 @@
     return M.rangeShift(pool, range);
   };
 
-  // The drum grid for a bar: the last bar of every 8 plays a fill (unless Vary is at zero,
-  // which keeps the pattern exact). Seeded by song and bar, so every render agrees.
-  M.drumGridAt = function (song, part, bar) {
-    if (bar % 8 !== 7 || !part.vary) return part.grid;
+  // The drum grid for a bar: the last bar of every 8 plays a fill, and so does the last bar of a
+  // section when `fill` says so (unless Vary is at zero, which keeps the pattern exact). Seeded
+  // by song and bar, so every render agrees.
+  M.drumGridAt = function (song, part, bar, fill = bar % 8 === 7) {
+    if (!fill || !part.vary) return part.grid;
     const style = (M.MOOD[song.mood] || M.MOODS[0]).styles.drums[0];
     return M.drumFill(part.grid, style, M.rng(song.seed + ':fill:' + bar));
+  };
+
+  // Breathe: the melody plays two bars and rests two. On a loop of 4 or 8 bars that would rest
+  // over the same chords every time, so every other pass of the loop swaps the halves and the
+  // answer phrase also lands on the last chord.
+  M.melodyRests = function (song, chords, n) {
+    const loop = chords.length * song.hr;
+    const flip = loop % 4 === 0 ? Math.floor(Math.floor(n / 16) / loop) : 0;
+    return (Math.floor(n / 32) + flip) % 2 === 1;
   };
 
   // What one part plays on step n, shared by the engine and the MIDI export so they agree.
@@ -268,7 +279,7 @@
   // the engine always has; without it the written pattern comes out exactly.
   M.partStep = function (song, chords, id, n, o = {}) {
     const meta = M.PART[id], part = song.parts[id], hits = [];
-    if (id === 'melody' && part.breathe && Math.floor(n / 32) % 2 === 1) return hits;
+    if (id === 'melody' && part.breathe && M.melodyRests(song, chords, n)) return hits;
     const r = o.rand, vary = part.vary;
     const grid = o.grid || part.grid, step = n % meta.len;
     const chord = chords[Math.floor(Math.floor(n / 16) / song.hr) % chords.length];
@@ -350,55 +361,56 @@
   M.DRUM_ROWS = ['Kick', 'Brush', 'Rim', 'Hat', 'Shaker'];
 
   /* ---------- Moods ("floors") ---------- */
+  // `pace`: bars in each main section of the song's form (see js/evolve.js); slower floors change less often.
   M.MOODS = [
     { id: 'night', floor: 'B', name: 'Night Shift', blurb: 'Dim lamps, warm pads and lo-fi keys for late study.',
       tempo: [68, 78], swing: [0.08, 0.16], modes: { aeolian: 3, dorian: 3 }, ext: { '9': 3, '7': 3, add9: 1 },
       hr: { 1: 2, 2: 1 }, len: { 4: 3, 8: 1 }, penta: true, jazz: 0,
       voices: { pad: 'velvet', keys: ['rhodes', 'grand'], bass: ['fretless', 'acbass'], arp: ['harp_s', 'nylon', 'celesta'], melody: ['grand', 'rhodes', 'flute_s'], texture: 'vinyl' },
       styles: { keys: ['lofi', 'whole', 'charleston'], bass: ['lofi', 'rootfifth', 'sway'], arp: ['sparse', 'updown', 'broken'], drums: ['lofi'] },
-      melody: 0.4, off: [], fx: { space: 0.5, echo: 0.35, warmth: 0.45 }, hue: [205, 250, 30] },
+      melody: 0.4, off: [], pace: 16, fx: { space: 0.5, echo: 0.35, warmth: 0.45 }, hue: [205, 250, 30] },
     { id: 'lobby', floor: 'L', name: 'Lobby', blurb: 'Velvet elevator lounge with bossa brushes and vibraphone.',
       tempo: [90, 104], swing: [0.06, 0.14], modes: { ionian: 4, lydian: 1, dorian: 1 }, ext: { '9': 3, '7': 3, '6': 1 },
       hr: { 1: 1 }, len: { 4: 3, 8: 1 }, penta: false, jazz: 0.65,
       voices: { pad: 'strings_s', keys: ['rhodes', 'nylon', 'grand'], bass: 'acbass', arp: ['vibraphone', 'celesta'], melody: ['flute_s', 'sax', 'vibraphone'], texture: 'none' },
       styles: { keys: ['bossa', 'charleston', 'half'], bass: ['bossa', 'walk'], arp: ['sparse', 'broken'], drums: ['bossa'] },
-      melody: 0.6, off: [], fx: { space: 0.4, echo: 0.2, warmth: 0.6 }, hue: [38, 190, 330] },
+      melody: 0.6, off: [], pace: 16, fx: { space: 0.4, echo: 0.2, warmth: 0.6 }, hue: [38, 190, 330] },
     { id: 'cafe', floor: 'M', name: 'Mezzanine Café', blurb: 'Sunday-morning marimba, kalimba and a light shaker.',
       tempo: [84, 96], swing: [0, 0.08], modes: { ionian: 3, mixolydian: 2, lydian: 1 }, ext: { add9: 3, triad: 2, '7': 1, '6': 1 },
       hr: { 1: 2, 2: 1 }, len: { 4: 3, 8: 1 }, penta: true, jazz: 0.2,
       voices: { pad: ['glass', 'strings_s'], keys: ['nylon', 'grand'], bass: 'acbass', arp: ['marimba_s', 'harp_s'], melody: ['kalimba_s', 'celesta', 'flute_s'], texture: 'none' },
       styles: { keys: ['half', 'sway', 'whole'], bass: ['rootfifth', 'pulse', 'sway'], arp: ['up', 'broken', 'pendulum'], drums: ['soft'] },
-      melody: 0.55, off: [], fx: { space: 0.4, echo: 0.25, warmth: 0.7 }, hue: [45, 150, 15] },
+      melody: 0.55, off: [], pace: 16, fx: { space: 0.4, echo: 0.25, warmth: 0.7 }, hue: [45, 150, 15] },
     { id: 'rain', floor: '2', name: 'Library Rain', blurb: 'Rhodes chords and soft drums under a rainy window.',
       tempo: [72, 84], swing: [0.1, 0.18], modes: { dorian: 3, aeolian: 2, ionian: 1 }, ext: { '9': 3, '7': 3 },
       hr: { 1: 2, 2: 1 }, len: { 4: 3, 8: 1 }, penta: true, jazz: 0.3,
       voices: { pad: 'velvet', keys: ['rhodes', 'grand'], bass: ['acbass', 'fretless'], arp: ['celesta', 'vibraphone', 'harp_s'], melody: ['grand', 'rhodes', 'flute_s'], texture: 'rain' },
       styles: { keys: ['lofi', 'charleston', 'half'], bass: ['lofi', 'sway'], arp: ['sparse', 'updown'], drums: ['lofi'] },
-      melody: 0.45, off: [], fx: { space: 0.45, echo: 0.3, warmth: 0.5 }, hue: [215, 180, 260] },
+      melody: 0.45, off: [], pace: 16, fx: { space: 0.45, echo: 0.3, warmth: 0.5 }, hue: [215, 180, 260] },
     { id: 'focus', floor: '3', name: 'Deep Focus', blurb: 'Slow glass pads and sparse bells. Nothing to distract you.',
       tempo: [64, 74], swing: [0, 0.04], modes: { ionian: 2, lydian: 3 }, ext: { add9: 3, sus2: 2, '7': 1 },
       hr: { 2: 3, 1: 1 }, len: { 4: 3, 2: 1 }, penta: true, jazz: 0,
       voices: { pad: ['glass', 'strings_s'], keys: 'grand', bass: 'sub', arp: ['grand', 'celesta', 'harp_s'], melody: ['flute_s', 'grand'], texture: 'none' },
       styles: { keys: ['whole'], bass: ['drone'], arp: ['sparse', 'pendulum'], drums: ['soft'] },
-      melody: 0.25, off: ['keys', 'drums'], fx: { space: 0.6, echo: 0.4, warmth: 0.55 }, hue: [175, 220, 140] },
+      melody: 0.25, off: ['keys', 'drums'], pace: 32, fx: { space: 0.6, echo: 0.4, warmth: 0.55 }, hue: [175, 220, 140] },
     { id: 'tea', floor: '4', name: 'Tea Garden', blurb: 'Pentatonic kalimba and flute drifting on a breeze.',
       tempo: [66, 78], swing: [0, 0.06], modes: { ionian: 2, dorian: 2, aeolian: 1 }, ext: { add9: 2, sus2: 2, triad: 2 },
       hr: { 1: 1, 2: 2 }, len: { 4: 3, 2: 1 }, penta: true, jazz: 0,
       voices: { pad: 'choir_s', keys: 'harp_s', bass: 'fretless', arp: ['kalimba_s', 'harp_s'], melody: ['flute_s', 'kalimba_s'], texture: 'wind' },
       styles: { keys: ['whole', 'half'], bass: ['drone', 'sway'], arp: ['pendulum', 'sparse', 'up'], drums: ['soft'] },
-      melody: 0.4, off: ['keys', 'drums'], fx: { space: 0.55, echo: 0.35, warmth: 0.65 }, hue: [95, 160, 40] },
+      melody: 0.4, off: ['keys', 'drums'], pace: 24, fx: { space: 0.55, echo: 0.35, warmth: 0.65 }, hue: [95, 160, 40] },
     { id: 'cloud', floor: '5', name: 'Cloud Room', blurb: 'Weightless choir pads, long echoes and ocean air.',
       tempo: [56, 66], swing: [0, 0.03], modes: { lydian: 3, ionian: 2 }, ext: { add9: 3, '7': 2, sus2: 2 },
       hr: { 2: 1 }, len: { 4: 2, 2: 1 }, penta: true, jazz: 0,
       voices: { pad: ['choir_s', 'glass'], keys: 'rhodes', bass: 'sub', arp: ['celesta', 'vibraphone'], melody: ['vibraphone', 'grand', 'celesta'], texture: 'ocean' },
       styles: { keys: ['whole'], bass: ['drone'], arp: ['sparse', 'pendulum'], drums: ['soft'] },
-      melody: 0.2, off: ['keys', 'drums'], fx: { space: 0.75, echo: 0.5, warmth: 0.5 }, hue: [195, 280, 210] },
+      melody: 0.2, off: ['keys', 'drums'], pace: 32, fx: { space: 0.75, echo: 0.5, warmth: 0.5 }, hue: [195, 280, 210] },
     { id: 'roof', floor: 'R', name: 'Rooftop Stars', blurb: 'Lydian shimmer and crickets under a clear night sky.',
       tempo: [58, 68], swing: [0, 0.05], modes: { lydian: 4, mixolydian: 1 }, ext: { '7': 2, add9: 3, '9': 1 },
       hr: { 2: 2, 1: 1 }, len: { 4: 3, 2: 1 }, penta: false, jazz: 0,
       voices: { pad: 'strings_s', keys: 'vibraphone', bass: ['sub', 'fretless'], arp: ['harp_s', 'celesta'], melody: ['grand', 'flute_s'], texture: 'crickets' },
       styles: { keys: ['whole', 'half'], bass: ['drone', 'rootfifth'], arp: ['up', 'sparse', 'pendulum'], drums: ['soft'] },
-      melody: 0.3, off: ['drums'], fx: { space: 0.65, echo: 0.45, warmth: 0.55 }, hue: [240, 290, 50] },
+      melody: 0.3, off: ['drums'], pace: 24, fx: { space: 0.65, echo: 0.45, warmth: 0.55 }, hue: [240, 290, 50] },
   ];
   M.MOOD = Object.fromEntries(M.MOODS.map((m) => [m.id, m]));
 
@@ -416,6 +428,7 @@
     5: { 1: 3, 3: 4, 4: 2, 2: 1, 0: 0.6 },
     6: { 0: 4, 2: 2, 5: 1, 3: 1 },
   };
+  M.NEXT = NEXT;
   const JAZZ = [[1, 4, 0, 0], [0, 5, 1, 4], [2, 5, 1, 4], [0, 3, 2, 5], [1, 4, 2, 5], [0, 1, 2, 3], [3, 2, 1, 4], [0, 5, 3, 4]];
 
   M.genProgression = function (r, mood, mode) {
@@ -447,6 +460,42 @@
       if (s > bestScore) { bestScore = s; best = p; }
     }
     return best;
+  };
+
+  // The bridge: a contrasting progression for the song's B section, 2 to 4 chords. It starts
+  // away from the theme's first chord (on IV, vi, ii or iii) and ends on a chord that leads
+  // back to it, so the return to the theme sounds like coming home.
+  M.genBridge = function (r, mood, mode, prog) {
+    const ok = (d) => !M.isDim(mode, d);
+    const home = prog[0].d, L = Math.min(4, Math.max(2, prog.length));
+    const inTheme = new Set(prog.map((c) => c.d));
+    const color = M.MODES[mode].color;
+    const lead = (d) => NEXT[d][home] || 0;
+    const DEGS = [0, 1, 2, 3, 4, 5, 6];
+    let best = null, bestScore = -Infinity;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const start = {};
+      for (const [d, w] of [[3, 4], [5, 3], [1, 2], [2, 1]]) if (ok(d) && d !== home) start[d] = w;
+      const p = [+r.weighted(start)];
+      while (p.length < L - 1) {
+        const w = Object.assign({}, NEXT[p[p.length - 1]]);
+        for (const k of Object.keys(w)) if (!ok(+k)) delete w[k];
+        if (w[color] !== undefined) w[color] *= 1.5;
+        p.push(Object.keys(w).length ? +r.weighted(w) : home);
+      }
+      // the last chord: a strong move home when there is one (V–I, IV–I, ♭VII–i), else the best there is
+      const prev = p[p.length - 1];
+      const cands = DEGS.filter((d) => ok(d) && d !== home && d !== prev);
+      const strong = cands.filter((d) => lead(d) >= 2), some = cands.filter((d) => lead(d) > 0);
+      const w = {};
+      for (const d of strong.length ? strong : some.length ? some : cands) w[d] = lead(d) * (1 + (NEXT[prev][d] || 0) / 3) + 0.01;
+      p.push(+r.weighted(w));
+      let s = r.next() + new Set(p).size * 0.8 + p.filter((d) => !inTheme.has(d)).length * 0.7 + lead(p[p.length - 1]) * 0.3;
+      if (p.includes(color)) s += 0.5;
+      for (let i = 1; i < p.length; i++) if (p[i] === p[i - 1]) s -= 2;
+      if (s > bestScore) { bestScore = s; best = p; }
+    }
+    return best.map((d) => ({ d, e: M.pickExt(r, mood, mode, d) }));
   };
 
   M.pickExt = function (r, mood, mode, d) {
@@ -655,6 +704,8 @@
     };
     // 8-chord progressions run at one bar per chord so loops stay a sensible length
     if (song.prog.length > 4) song.hr = 1;
+    // the bridge draws from its own random stream, so every other part of a song is as it always was
+    song.progB = M.genBridge(M.rng(seed + ':' + mood.id + ':bridge'), mood, mode, song.prog);
     const vr = M.rng(seed + ':' + mood.id + ':voices');
     for (const p of M.PARTS) {
       const mv = mood.voices[p.id];
@@ -674,24 +725,25 @@
     return song;
   };
 
-  M.regenPart = function (song, id) {
+  // Re-rolls take an optional seeded random source (M.rng), so Evolve can replay a journey exactly.
+  M.regenPart = function (song, id, r = M.rng(M.newSeed())) {
     const mood = M.MOOD[song.mood];
-    song.parts[id].grid = M.gen[id](M.rng(M.newSeed()), mood);
+    song.parts[id].grid = M.gen[id](r, mood);
     song.edited = true;
   };
 
-  M.regenProgression = function (song) {
+  // A new theme progression and a bridge to go with it.
+  M.regenProgression = function (song, r = M.rng(M.newSeed())) {
     const mood = M.MOOD[song.mood];
-    const r = M.rng(M.newSeed());
     const degs = M.genProgression(r, mood, song.mode);
     song.prog = degs.map((d) => ({ d, e: M.pickExt(r, mood, song.mode, d) }));
+    song.progB = M.genBridge(r, mood, song.mode, song.prog);
     song.edited = true;
   };
 
   // Gentle mutations used by Evolve so the music keeps changing without losing its identity.
-  M.varyMelody = function (song) {
+  M.varyMelody = function (song, r = M.rng(M.newSeed())) {
     const g = song.parts.melody.grid;
-    const r = M.rng(M.newSeed());
     const kind = r.weighted({ repitch: 3, shiftBar: 2, rebar: 2, fresh: 1 });
     const notes = [];
     for (let s = 0; s < 32; s++) for (let row = 0; row < 12; row++) if (g[row][s]) notes.push([row, s]);
@@ -722,11 +774,13 @@
   };
 
   /* ---------- Song codes (copy/paste sharing) ---------- */
+  const progCode = (prog) => prog.map((c) => c.d + ':' + c.e).join(',');
+  const progFrom = (code) => code.split(',').map((x) => { const [d, e] = x.split(':'); return { d: +d, e }; });
   M.encodeSong = function (song) {
     if (!song.edited) return song.mood + '.' + song.seed;
     const c = {
       v: 1, s: song.seed, m: song.mood, t: song.title, k: song.key, o: song.mode, b: song.tempo, w: song.swing, h: song.hr,
-      pn: song.penta ? 1 : 0, p: song.prog.map((c) => c.d + ':' + c.e).join(','), f: song.fx, P: {},
+      pn: song.penta ? 1 : 0, p: progCode(song.prog), pb: song.progB ? progCode(song.progB) : undefined, f: song.fx, P: {},
     };
     for (const [id, p] of Object.entries(song.parts)) {
       c.P[id] = { v: p.voice, o: p.on ? 1 : 0, l: +p.vol.toFixed(2), y: +p.vary.toFixed(2), br: p.breathe ? 1 : 0,
@@ -744,7 +798,9 @@
     const c = JSON.parse(decodeURIComponent(escape(atob(b64))));
     const song = M.generateSong(c.s, c.m);
     Object.assign(song, { title: c.t, key: c.k, mode: c.o, tempo: c.b, swing: c.w, hr: c.h, penta: !!c.pn, fx: c.f, edited: true });
-    song.prog = c.p.split(',').map((x) => { const [d, e] = x.split(':'); return { d: +d, e }; });
+    song.prog = progFrom(c.p);
+    // codes from before the bridge existed get one written for their theme, the same one every time
+    song.progB = c.pb ? progFrom(c.pb) : M.genBridge(M.rng(song.seed + ':' + song.mood + ':bridge'), M.MOOD[song.mood], song.mode, song.prog);
     for (const [id, p] of Object.entries(c.P)) {
       const part = song.parts[id];
       if (!part) continue;

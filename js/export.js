@@ -34,6 +34,8 @@
   // the same drops, ghost hats and neighbour notes the live engine plays.
   M.songNotes = function (song, { bars = 32, rand = null } = {}) {
     const chords = M.buildChords(song);
+    // octave shifts come from theme and bridge chords together, as the engine works them out
+    const pool = chords.concat(M.buildChords(song, song.progB || song.prog));
     const voice = (p) => (M.VOICES && M.VOICES[p.voice]) || {};
     const tracks = {};
     for (const meta of M.PARTS) {
@@ -43,7 +45,7 @@
         id: meta.id, name: meta.name + (drums ? '' : ' · ' + (voice(p).label || p.voice)),
         channel: CHANNEL[meta.id], program: drums ? null : M.GM_PROGRAM[p.voice] || 0,
         volume: Math.round(Math.min(1, p.vol) * 127), notes: [],
-        range: voice(p).range, shift: drums ? 0 : M.partShift(song, chords, meta.id, voice(p).range),
+        range: voice(p).range, shift: drums ? 0 : M.partShift(song, pool, meta.id, voice(p).range),
       };
     }
     const split = !!(tracks.pad && tracks.keys);
