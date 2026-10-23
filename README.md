@@ -36,6 +36,9 @@ Then visit http://localhost:8791.
   - Ambience beds: rain, vinyl, ocean, wind and crickets.
   - Reverb and ping-pong echo.
 - **Study tools:** a focus timer with a chime and fade-out, song codes for sharing, a shelf of kept songs, and audio recording (local copy only).
+- **Export (local copy only):**
+  - WAV: 2, 5 or 10 minutes of 16-bit stereo audio, rendered faster than real time. It evolves and arranges itself as live playback does, and has a fade-in and a fade-out.
+  - MIDI: a type 1 Standard MIDI File with tempo, key signature and one track per part (pad, keys, bass, arp, melody, and GM drums on channel 10). Swing is kept in the note timing. Opens in Logic Pro or any DAW.
 
 ## Project layout
 
@@ -45,11 +48,14 @@ Then visit http://localhost:8791.
 | `css/style.css` | Styles, with light and dark themes defined as tokens. |
 | `js/core.js` | Seeded random numbers, music theory, floors, pattern generators, song codes. No audio and no DOM. |
 | `js/audio.js` | Voice presets, sampler, synths, drum kit, ambience beds, effects and the step scheduler (`M.Engine`). |
-| `js/ui.js` | Interface, visualizer, Evolve and Auto-arrange logic, timer, shelf, keyboard shortcuts. |
+| `js/evolve.js` | Evolve and Auto-arrange (`M.Evolve`): bar-line changes driven by an engine's `bar` events, for live play and offline renders. |
+| `js/export.js` | Pure export formats: song to MIDI notes (`M.songNotes`), the MIDI file writer, 16-bit WAV encoding. |
+| `js/render.js` | Offline rendering of a song to WAV (`M.renderSong`), capped at 10 minutes. |
+| `js/ui.js` | Interface, visualizer, timer, shelf, export controls, keyboard shortcuts. |
 | `samples/*.js` | Packed instrument samples (base64 MP3s, one note every minor third). |
 | `tools/pack-samples.mjs` | Rebuilds `samples/` from MIDI.js soundfont files. |
 | `build.mjs` | Inlines everything into `dist/mezzanine.html` for publishing as a Claude artifact. |
-| `tests/` | Unit tests for theory, generation and song codes. |
+| `tests/` | Unit tests for theory, generation, song codes, export formats and the evolve module. |
 
 ## Develop
 
