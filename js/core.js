@@ -159,8 +159,10 @@
         ch.bass = [0, 2, 4, 7].map((o) => M.degMidi(key, mode, d + o, 2) + bOff);
         // arp: chord tones stacked upward across octaves
         const n = degs.length;
+        // sort so rows always rise in pitch (a 9th sits above the next octave's root otherwise)
         let arp = [];
-        for (let k = 0; k < 8; k++) arp.push(M.degMidi(key, mode, degs[k % n] + 7 * Math.floor(k / n), 4));
+        for (let k = 0; k < 16; k++) arp.push(M.degMidi(key, mode, degs[k % n] + 7 * Math.floor(k / n), 4));
+        arp = [...new Set(arp)].sort((a, b) => a - b).slice(0, 8);
         while (arp[0] < 55) arp = arp.map((x) => x + 12);
         while (arp[0] > 66) arp = arp.map((x) => x - 12);
         ch.arp = arp;

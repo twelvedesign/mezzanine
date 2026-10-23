@@ -1,0 +1,10 @@
+{
+  "name": "mezzanine",
+  "private": true,
+  "description": "Generative ambient and elevator music studio built from step sequences",
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "build": "node build.mjs",
+    "serve": "python3 -m http.server 8791 --bind 127.0.0.1"
+  }
+}
