@@ -93,8 +93,14 @@ test('MIDI note counts match the grids and every note is closed', () => {
   assert.equal(count.arp, hits('arp') * bars);
   assert.equal(count.drums, hits('drums') * bars);
   assert.equal(count.melody, hits('melody') * (bars / 2));
-  let padNotes = 0;
-  for (let b = 0; b < bars; b++) padNotes += chords[Math.floor(b / s.hr) % chords.length].pad.length * hits('pad');
+  // the pad strikes every hit except a tie onto the voicing already sounding (split, as keys play too)
+  let padNotes = 0, sounding = null;
+  for (let n = 0; n < bars * 16; n++) {
+    if (!s.parts.pad.grid[0][n % 16]) continue;
+    const v = chords[Math.floor(n / 16 / s.hr) % chords.length].padSplit;
+    if (M.padHold(s.parts.pad.grid, n, s.hr, chords).tie && sounding === v.join()) continue;
+    padNotes += v.length; sounding = v.join();
+  }
   assert.equal(count.pad, padNotes);
   for (const tr of mid.tracks.slice(1)) {
     assert.equal(noteOns(tr).length, noteOffs(tr).length, 'one note-off per note-on');
@@ -132,6 +138,87 @@ test('MIDI skips muted parts, and Vary only changes things when a random source 
   const varied = M.songNotes(s, { bars: 4, rand: () => rr.next() });
   for (const tr of varied.tracks) for (const n of tr.notes) {
     assert.ok(n.vel >= 1 && n.vel <= 127 && n.dur >= 1 && n.midi >= 0 && n.midi <= 127);
+  }
+});
+
+// Every note Engine.schedule plays, per part, as [midi, velocity], with stubbed voices and
+// Math.random replaced by `rand`.
+function engineNotes(song, bars, rand) {
+  const e = new M.Engine(), heard = {};
+  const saved = [M.preloadSong, M.playVoice, M.playDrum, Math.random, globalThis.document];
+  const add = (id, midi, v) => (heard[id] = heard[id] || []).push([midi, Math.max(1, Math.min(127, Math.round(v * 127)))]);
+  M.preloadSong = () => {};
+  M.playVoice = (ctx, out, voice, midi, t, dur, v) => add(out, midi, v);
+  M.playDrum = (ctx, out, row, t, v) => add(out, M.GM_DRUMS[row], v);
+  Math.random = rand;
+  globalThis.document = { hidden: true };
+  try {
+    e.setSong(song);
+    e.ctx = { currentTime: 0 }; e.parts = new Proxy({}, { get: (_, id) => ({ input: id }) });
+    let t = 0;
+    for (let n = 0; n < bars * 16; n++) { e.schedule(n, t); t += e.stepDur(n); }
+  } finally { [M.preloadSong, M.playVoice, M.playDrum, Math.random, globalThis.document] = saved; }
+  return heard;
+}
+
+test('MIDI plays the same notes as the engine', () => {
+  for (const mood of M.MOODS) for (const seed of ['same1', 'same2']) {
+    const s = M.generateSong(seed, mood.id);
+    for (const id of ['pad', 'keys', 'bass', 'arp', 'melody', 'drums']) s.parts[id].on = true;
+    s.parts.drums.vary = Math.max(0.2, s.parts.drums.vary);
+    const a = M.rng('r:' + seed), b = M.rng('r:' + seed);
+    const heard = engineNotes(s, 16, () => a.next());
+    const score = M.songNotes(s, { bars: 16, rand: () => b.next() });
+    assert.equal(score.tracks.length, 6);
+    for (const tr of score.tracks) {
+      assert.deepEqual(tr.notes.map((n) => [n.midi, n.vel]), heard[tr.id], `${mood.id} ${seed} ${tr.id}`);
+    }
+  }
+});
+
+test('MIDI pad chords tie across a 2-bar chord instead of re-striking', () => {
+  const s = M.generateSong('ties', 'lobby');
+  for (const id of ['keys', 'bass', 'arp', 'melody', 'drums']) s.parts[id].on = false;
+  s.parts.pad.on = true; s.hr = 2;
+  s.parts.pad.grid[0] = s.parts.pad.grid[0].map((v, i) => (i === 0 ? 0.7 : 0)); // one hit per bar
+  const chords = M.buildChords(s);
+  const pad = M.songNotes(s, { bars: 8 }).tracks.find((t) => t.id === 'pad').notes;
+  const onsets = [...new Set(pad.map((n) => n.tick))];
+  const bar = 4 * 480;
+  // one strike per chord, never on the tied second bar, each ringing for the whole chord
+  for (const t of onsets) assert.equal((t / bar) % 2, 0, 'struck on the chord change only');
+  assert.ok(onsets.length <= 4 && onsets.length >= 1);
+  assert.ok(pad.some((n) => n.dur >= 2 * bar - 1), 'a tied chord rings across both bars');
+  assert.equal(pad.filter((n) => n.tick === 0).length, chords[0].pad.length);
+});
+
+test('MIDI drum fills land in the last bar of every 8', () => {
+  const s = M.generateSong('fills', 'cafe');
+  s.parts.drums.on = true; s.parts.drums.vary = 0.4;
+  const g = s.parts.drums.grid;
+  g.forEach((r) => r.fill(0));
+  g[0][0] = g[0][8] = 0.9; g[1][4] = g[1][12] = 0.6; g[2][12] = g[2][13] = 0.5; g[3].forEach((_, i) => (g[3][i] = i % 2 ? 0 : 0.4));
+  const bar = 4 * 480;
+  const drums = M.songNotes(s, { bars: 16 }).tracks.find((t) => t.id === 'drums').notes;
+  const inBar = (b) => drums.filter((n) => Math.floor(n.tick / bar) === b).map((n) => [n.tick % bar, n.midi, n.vel]).sort().join();
+  for (const b of [1, 2, 3, 4, 5, 6, 8, 9]) assert.equal(inBar(b), inBar(0), `bar ${b + 1} plays the written pattern`);
+  assert.notEqual(inBar(7), inBar(0), 'bar 8 plays a fill');
+  assert.notEqual(inBar(15), inBar(0), 'bar 16 plays a fill');
+  s.parts.drums.vary = 0;
+  const exact = M.songNotes(s, { bars: 8 }).tracks.find((t) => t.id === 'drums').notes;
+  assert.equal(exact.filter((n) => n.tick >= 7 * bar).length, exact.filter((n) => n.tick < bar).length, 'Vary at zero keeps bar 8 as written');
+});
+
+test('MIDI melody stays inside the voice range', () => {
+  for (const voice of ['sax', 'flute_s', 'kalimba_s', 'grand']) {
+    const range = M.VOICES[voice].range;
+    for (const seed of ['r1', 'r2', 'r3']) for (const mood of M.MOODS) {
+      const s = M.generateSong(seed, mood.id);
+      s.parts.melody.on = true; s.parts.melody.voice = voice; s.parts.melody.breathe = false;
+      const mel = M.songNotes(s, { bars: 8 }).tracks.find((t) => t.id === 'melody').notes;
+      assert.ok(mel.length, `${voice} ${mood.id} plays`);
+      for (const n of mel) assert.ok(n.midi >= range[0] && n.midi <= range[1], `${voice} ${mood.id} note ${n.midi} in ${range}`);
+    }
   }
 });
 

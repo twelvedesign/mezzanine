@@ -6,6 +6,7 @@ Generative ambient and elevator music in the browser. See README.md for features
 - No dependencies and no bundler. Scripts are classic `<script>` files sharing `window.M`, loaded in this order: core.js, audio.js, evolve.js, export.js, render.js, ui.js, device.js. A new script also belongs in the `SHELL` list in `sw.js`. The page must keep working when opened from `file://`.
 - `js/core.js` and `js/export.js` stay pure: no DOM and no Web Audio, so they can be tested in Node. `js/evolve.js` needs only an object with `on`, `rebuild` and `setArrangement`.
 - Musicality comes first. Grid rows are relative to the current chord (bass: R/3/5/8/approach; arp: chord tones rising; melody: scale-degree offsets −3..+8 from the chord root). Keep new generators chord-aware.
+- `M.partStep` in `js/core.js` decides which notes a part plays on a step, for both `Engine.schedule` and the MIDI export (`M.songNotes`). Change note choice, lengths, ties, ranges or fills there, so live audio and MIDI stay the same.
 - Song codes (`M.encodeSong`/`M.decodeSong`) are a public format. Saved songs on users' shelves must keep loading, so add fields with defaults and never rename them.
 - Do not edit `dist/` or `samples/` by hand. Regenerate them with `npm run build` and `tools/pack-samples.mjs`.
 

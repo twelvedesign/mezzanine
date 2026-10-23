@@ -229,6 +229,91 @@
     return { tie, steps: k };
   };
 
+  // Steps from `step` to the next onset in a grid, for note lengths.
+  M.gridGap = function (grid, len, step, cap) {
+    for (let k = 1; k <= cap; k++) {
+      const s = (step + k) % len;
+      for (const row of grid) if (row[s]) return k;
+    }
+    return cap;
+  };
+
+  // Octave shift that moves a part into an instrument's range, from every note it could play.
+  M.partShift = function (song, chords, id, range) {
+    const pool = [];
+    for (const c of chords) {
+      if (id === 'melody') for (let row = 0; row < 12; row++) pool.push(M.melodyMidi(song, c, row));
+      else if (id === 'pad') pool.push(...c.pad, ...c.padSplit);
+      else if (id === 'keys') pool.push(...c.keys, ...c.keysSplit);
+      else pool.push(...c[id]);
+    }
+    return M.rangeShift(pool, range);
+  };
+
+  // The drum grid for a bar: the last bar of every 8 plays a fill (unless Vary is at zero,
+  // which keeps the pattern exact). Seeded by song and bar, so every render agrees.
+  M.drumGridAt = function (song, part, bar) {
+    if (bar % 8 !== 7 || !part.vary) return part.grid;
+    const style = (M.MOOD[song.mood] || M.MOODS[0]).styles.drums[0];
+    return M.drumFill(part.grid, style, M.rng(song.seed + ':fill:' + bar));
+  };
+
+  // What one part plays on step n, shared by the engine and the MIDI export so they agree.
+  // Returns hits { row, v, notes, steps, jitter, voicing }: `steps` is the note length in
+  // steps, `notes` are already shifted and folded into the instrument's range.
+  // Options: grid (drums: the bar's fill), split (pad and keys share the register), shift and
+  // range (from M.partShift and the voice), ringing(voicing) (is that pad chord still
+  // sounding, so a tie can let it carry on) and rand. With rand, Vary adds drops, ghost hats,
+  // velocity spread, timing jitter and neighbour notes, drawing from rand in the same order
+  // the engine always has; without it the written pattern comes out exactly.
+  M.partStep = function (song, chords, id, n, o = {}) {
+    const meta = M.PART[id], part = song.parts[id], hits = [];
+    if (id === 'melody' && part.breathe && Math.floor(n / 32) % 2 === 1) return hits;
+    const r = o.rand, vary = part.vary;
+    const grid = o.grid || part.grid, step = n % meta.len;
+    const chord = chords[Math.floor(Math.floor(n / 16) / song.hr) % chords.length];
+    for (let row = 0; row < meta.rows; row++) {
+      let v = grid[row][step];
+      if (!v) {
+        // Vary can add a ghost hat or shaker
+        if (r && id === 'drums' && row >= 3 && step % 2 === 1 && r() < vary * 0.18) v = 0.18 + r() * 0.12;
+        else continue;
+      }
+      if (r) {
+        if (r() < vary * (id === 'pad' ? 0 : id === 'bass' ? 0.08 : 0.22) && step % 8 !== 0) continue;
+        v = Math.max(0.1, Math.min(1, v * (0.9 + r() * 0.2)));
+      }
+      const jitter = r && id !== 'pad' ? (r() - 0.5) * 0.012 : 0;
+      if (id === 'drums') { hits.push({ row, v, jitter }); continue; }
+      let notes, steps, voicing;
+      if (id === 'pad') {
+        notes = o.split ? chord.padSplit : chord.pad;
+        voicing = notes.join();
+        const hold = M.padHold(part.grid, n, song.hr, chords);
+        // a tie lets the sounding chord ring on, unless nothing (or a different voicing) is sounding
+        if (hold.tie && o.ringing && o.ringing(voicing)) continue;
+        steps = hold.steps;
+      } else if (id === 'keys') {
+        notes = o.split ? chord.keysSplit : chord.keys;
+        steps = Math.min(8, M.gridGap(part.grid, 16, step, 16)) * 0.9;
+      } else if (id === 'bass') {
+        notes = [chord.bass[row]]; steps = M.gridGap(part.grid, 16, step, 16) * 0.92;
+      } else if (id === 'arp') {
+        let rr = row;
+        if (r && r() < vary * 0.2) rr = Math.max(0, Math.min(7, row + (r() < 0.5 ? -1 : 1)));
+        notes = [chord.arp[rr]]; steps = M.gridGap(part.grid, 16, step, 8);
+      } else {
+        let rr = row;
+        if (r && step % 4 !== 0 && r() < vary * 0.2) rr = Math.max(0, Math.min(11, row + (r() < 0.5 ? -1 : 1)));
+        notes = [M.melodyMidi(song, chord, rr)]; steps = Math.min(12, M.gridGap(part.grid, 32, step, 12)) * 0.95;
+      }
+      const sh = o.shift || 0;
+      notes = notes.map((m) => M.foldInto(m + sh, o.range));
+      hits.push({ row, v, notes, steps, jitter, voicing });
+    }
+    return hits;
+  };
+
   M.melodyMidi = function (song, chord, row) {
     const off = row - 3;
     let deg = chord.rootNorm + off;

@@ -532,20 +532,10 @@
     }
     rebuild() { this.chords = M.buildChords(this.song); this.shifts = {}; this.emit('chords', this.chords); }
 
-    // Octave shift that moves a part into its instrument's range, from every note it could play.
+    // Octave shift that moves a part into its instrument's range (cached per voice).
     regShift(id, voice) {
-      const range = (M.VOICES[voice] || {}).range, song = this.song;
-      const key = id + ':' + voice + ':' + song.penta;
-      if (this.shifts[key] === undefined) {
-        const pool = [];
-        for (const c of this.chords) {
-          if (id === 'melody') for (let row = 0; row < 12; row++) pool.push(M.melodyMidi(song, c, row));
-          else if (id === 'pad') pool.push(...c.pad, ...c.padSplit);
-          else if (id === 'keys') pool.push(...c.keys, ...c.keysSplit);
-          else pool.push(...c[id]);
-        }
-        this.shifts[key] = M.rangeShift(pool, range);
-      }
+      const key = id + ':' + voice + ':' + this.song.penta;
+      if (this.shifts[key] === undefined) this.shifts[key] = M.partShift(this.song, this.chords, id, (M.VOICES[voice] || {}).range);
       return this.shifts[key];
     }
 
@@ -682,22 +672,11 @@
       }
     }
 
-    // Time from step n until the next onset in a part's grid (for note lengths).
-    gap(grid, len, step, cap) {
-      for (let k = 1; k <= cap; k++) {
-        const s = (step + k) % len;
-        for (const row of grid) if (row[s]) return k;
-      }
-      return cap;
-    }
-    // The last bar of every 8 plays a fill (unless Vary is at zero, which keeps the pattern exact).
+    // The bar's drum grid, with a fill on the last bar of every 8 (cached for the bar).
     drumGrid(part, bar) {
       if (bar % 8 !== 7 || !part.vary) return part.grid;
       const f = this.fill;
-      if (!f || f.bar !== bar || f.src !== part.grid) {
-        const style = (M.MOOD[this.song.mood] || M.MOODS[0]).styles.drums[0];
-        this.fill = { bar, src: part.grid, grid: M.drumFill(part.grid, style, M.rng(this.song.seed + ':fill:' + bar)) };
-      }
+      if (!f || f.bar !== bar || f.src !== part.grid) this.fill = { bar, src: part.grid, grid: M.drumGridAt(this.song, part, bar) };
       return this.fill.grid;
     }
     span(n, steps) { let d = 0; for (let k = 0; k < steps; k++) d += this.stepDur(n + k); return d; }
@@ -721,56 +700,28 @@
       // pad and keys share out the register while both are sounding
       const split = ['pad', 'keys'].every((id) => this.audible(id) && this.arr[id] !== 0);
 
+      const held = this.padHeld;
+      const ringing = (voicing) => held && held.until > t + 0.05 && held.notes === voicing;
+
       for (const meta of M.PARTS) {
         const id = meta.id, part = song.parts[id];
         if (!meta.len || !this.audible(id) || this.arr[id] === 0) continue;
-        if (id === 'melody' && part.breathe && Math.floor(n / 32) % 2 === 1) continue;
-        const step = n % meta.len;
-        const out = this.parts[id].input;
-        const vary = part.vary;
-        const r = Math.random;
-        const grid = id === 'drums' ? this.drumGrid(part, bar) : part.grid;
-        for (let row = 0; row < meta.rows; row++) {
-          let v = grid[row][step];
-          if (!v) {
-            // Vary can add a ghost hat or shaker
-            if (id === 'drums' && row >= 3 && step % 2 === 1 && r() < vary * 0.18) v = 0.18 + r() * 0.12;
-            else continue;
-          }
-          if (r() < vary * (id === 'pad' ? 0 : id === 'bass' ? 0.08 : 0.22) && step % 8 !== 0) continue;
-          v = Math.max(0.1, Math.min(1, v * (0.9 + r() * 0.2)));
-          const jitter = id === 'pad' ? 0 : (r() - 0.5) * 0.012;
+        const out = this.parts[id].input, step = n % meta.len;
+        const hits = M.partStep(song, this.chords, id, n, {
+          rand: Math.random, split, ringing,
+          grid: id === 'drums' ? this.drumGrid(part, bar) : null,
+          shift: id === 'drums' ? 0 : this.regShift(id, part.voice), range: (M.VOICES[part.voice] || {}).range,
+        });
+        for (const { row, v, notes, steps, jitter, voicing } of hits) {
           const tt = Math.max(ctx.currentTime, t + jitter);
-          let notes = [], gapSteps;
           if (id === 'drums') {
             M.playDrum(ctx, out, row, tt, v);
             if (visual) this.events.push({ t: tt, type: 'note', part: id, row, step, midi: 40 + row * 10, v });
             continue;
           }
-          if (id === 'pad') {
-            notes = split ? chord.padSplit : chord.pad;
-            const hold = M.padHold(part.grid, n, song.hr, this.chords), held = this.padHeld;
-            // a tie lets the sounding chord ring on, unless nothing (or a different voicing) is sounding
-            if (hold.tie && held && held.until > t + 0.05 && held.notes === notes.join()) continue;
-            gapSteps = hold.steps;
-          }
-          else if (id === 'keys') { notes = split ? chord.keysSplit : chord.keys; gapSteps = Math.min(8, this.gap(part.grid, 16, step, 16)) * 0.9; }
-          else if (id === 'bass') {
-            let m = chord.bass[row === 3 ? 3 : row === 4 ? 4 : row === 2 ? 2 : row === 1 ? 1 : 0];
-            notes = [m]; gapSteps = this.gap(part.grid, 16, step, 16) * 0.92;
-          } else if (id === 'arp') {
-            let rr = row;
-            if (r() < vary * 0.2) rr = Math.max(0, Math.min(7, row + (r() < 0.5 ? -1 : 1)));
-            notes = [chord.arp[rr]]; gapSteps = this.gap(part.grid, 16, step, 8);
-          } else if (id === 'melody') {
-            let rr = row;
-            if (step % 4 !== 0 && r() < vary * 0.2) rr = Math.max(0, Math.min(11, row + (r() < 0.5 ? -1 : 1)));
-            notes = [M.melodyMidi(song, chord, rr)]; gapSteps = Math.min(12, this.gap(part.grid, 32, step, 12)) * 0.95;
-          }
-          const dur = this.span(n, Math.max(1, Math.ceil(gapSteps))) * (gapSteps / Math.max(1, Math.ceil(gapSteps)));
-          if (id === 'pad') this.padHeld = { until: tt + dur, notes: notes.join() };
-          const sh = this.regShift(id, part.voice), range = (M.VOICES[part.voice] || {}).range;
-          notes = notes.map((m) => M.foldInto(m + sh, range));
+          const whole = Math.max(1, Math.ceil(steps));
+          const dur = this.span(n, whole) * (steps / whole);
+          if (id === 'pad') this.padHeld = { until: tt + dur, notes: voicing };
           notes.forEach((m, i) => {
             const st = id === 'keys' ? tt + i * 0.006 : tt; // a soft strum
             M.playVoice(ctx, out, part.voice, m, st, dur, v);

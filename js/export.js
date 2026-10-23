@@ -22,75 +22,51 @@
     const sw = Math.min(0.35, swing);
     return Math.floor(n / 2) * 240 + (n % 2 ? Math.round(120 * (1 + sw)) : 0);
   }
-  // Steps from `step` to the next onset in a grid (same as Engine.gap).
-  function gap(grid, len, step, cap) {
-    for (let k = 1; k <= cap; k++) {
-      const s = (step + k) % len;
-      for (const row of grid) if (row[s]) return k;
-    }
-    return cap;
-  }
   function audible(song, id) {
     const p = song.parts[id];
     const anySolo = Object.values(song.parts).some((x) => x.solo);
     return p.on && (!anySolo || p.solo);
   }
 
-  // Notes for `bars` bars of the song, following Engine.schedule step by step.
-  // Without `rand` the written pattern comes out exactly; with one, Vary adds the same
-  // drops, ghost hats and neighbour notes the live engine plays.
+  // Notes for `bars` bars of the song. M.partStep decides every note, as it does for the
+  // engine, so pad ties, the pad/keys register split, instrument ranges and drum fills match
+  // what plays live. Without `rand` the written pattern comes out exactly; with one, Vary adds
+  // the same drops, ghost hats and neighbour notes the live engine plays.
   M.songNotes = function (song, { bars = 32, rand = null } = {}) {
     const chords = M.buildChords(song);
-    const r = rand || (() => 1);
-    const vary = (p) => (rand ? p.vary : 0);
+    const voice = (p) => (M.VOICES && M.VOICES[p.voice]) || {};
     const tracks = {};
     for (const meta of M.PARTS) {
       if (!meta.len || !audible(song, meta.id)) continue;
-      const p = song.parts[meta.id];
+      const p = song.parts[meta.id], drums = meta.id === 'drums';
       tracks[meta.id] = {
-        id: meta.id, name: meta.name + (meta.id === 'drums' ? '' : ' · ' + M.VOICES[p.voice].label),
-        channel: CHANNEL[meta.id], program: meta.id === 'drums' ? null : M.GM_PROGRAM[p.voice] || 0,
+        id: meta.id, name: meta.name + (drums ? '' : ' · ' + (voice(p).label || p.voice)),
+        channel: CHANNEL[meta.id], program: drums ? null : M.GM_PROGRAM[p.voice] || 0,
         volume: Math.round(Math.min(1, p.vol) * 127), notes: [],
+        range: voice(p).range, shift: drums ? 0 : M.partShift(song, chords, meta.id, voice(p).range),
       };
     }
+    const split = !!(tracks.pad && tracks.keys);
     const total = bars * 16;
     const end = stepTick(total, song.swing);
     const tick = (n) => stepTick(n, song.swing);
     const strum = Math.round(0.006 * song.tempo * PPQ / 60); // keys roll by about 6 ms per note
+    let held = null; // the pad chord sounding: { until (step), voicing }
+    const ringing = (n) => (voicing) => held && held.until > n && held.voicing === voicing;
     for (let n = 0; n < total; n++) {
-      const bar = Math.floor(n / 16);
-      const chord = chords[Math.floor(bar / song.hr) % chords.length];
-      const t = tick(n);
+      const t = tick(n), bar = Math.floor(n / 16);
       for (const id of Object.keys(tracks)) {
-        const meta = M.PART[id], part = song.parts[id], tr = tracks[id];
-        if (id === 'melody' && part.breathe && Math.floor(n / 32) % 2 === 1) continue;
-        const step = n % meta.len;
-        const vy = vary(part);
-        for (let row = 0; row < meta.rows; row++) {
-          let v = part.grid[row][step];
-          if (!v) {
-            if (id === 'drums' && row >= 3 && step % 2 === 1 && rand && r() < vy * 0.18) v = 0.18 + r() * 0.12;
-            else continue;
-          }
-          if (rand && r() < vy * (id === 'pad' ? 0 : id === 'bass' ? 0.08 : 0.22) && step % 8 !== 0) continue;
-          if (rand) v = Math.max(0.1, Math.min(1, v * (0.9 + r() * 0.2)));
+        const part = song.parts[id], tr = tracks[id];
+        const hits = M.partStep(song, chords, id, n, {
+          rand, split, ringing: ringing(n), shift: tr.shift, range: tr.range,
+          grid: id === 'drums' ? M.drumGridAt(song, part, bar) : null,
+        });
+        for (const { row, v, notes, steps, voicing } of hits) {
           const vel = Math.max(1, Math.min(127, Math.round(v * 127)));
           if (id === 'drums') { tr.notes.push({ tick: t, dur: 60, midi: M.GM_DRUMS[row], vel }); continue; }
-          let notes, g;
-          if (id === 'pad') { notes = chord.pad; g = gap(part.grid, 16, step, 16 * song.hr); }
-          else if (id === 'keys') { notes = chord.keys; g = Math.min(8, gap(part.grid, 16, step, 16)) * 0.9; }
-          else if (id === 'bass') { notes = [chord.bass[row]]; g = gap(part.grid, 16, step, 16) * 0.92; }
-          else if (id === 'arp') {
-            let rr = row;
-            if (rand && r() < vy * 0.2) rr = Math.max(0, Math.min(7, row + (r() < 0.5 ? -1 : 1)));
-            notes = [chord.arp[rr]]; g = gap(part.grid, 16, step, 8);
-          } else {
-            let rr = row;
-            if (rand && step % 4 !== 0 && r() < vy * 0.2) rr = Math.max(0, Math.min(11, row + (r() < 0.5 ? -1 : 1)));
-            notes = [M.melodyMidi(song, chord, rr)]; g = Math.min(12, gap(part.grid, 32, step, 12)) * 0.95;
-          }
-          const whole = Math.max(1, Math.ceil(g));
-          const dur = Math.max(1, Math.round((tick(n + whole) - t) * (g / whole)));
+          const whole = Math.max(1, Math.ceil(steps));
+          const dur = Math.max(1, Math.round((tick(n + whole) - t) * (steps / whole)));
+          if (id === 'pad') held = { until: n + whole, voicing };
           notes.forEach((m, i) => {
             const at = id === 'keys' ? t + i * strum : t;
             tr.notes.push({ tick: at, dur: Math.max(1, Math.min(dur, end - at)), midi: m, vel });
@@ -98,7 +74,8 @@
         }
       }
     }
-    return { ppq: PPQ, tempo: song.tempo, key: song.key, mode: song.mode, title: song.title, bars, end, tracks: Object.values(tracks) };
+    const out = Object.values(tracks).map(({ range, shift, ...tr }) => tr);
+    return { ppq: PPQ, tempo: song.tempo, key: song.key, mode: song.mode, title: song.title, bars, end, tracks: out };
   };
 
   // Key signature for FF 59: sharps (+) or flats (−) of the tonic's major or minor key.
