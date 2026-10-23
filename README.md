@@ -5,7 +5,10 @@ Pick a mood ("floor"). Mezzanine writes a song for it and plays it through seven
 pad, keys, bass, arpeggio, melody, soft drums and ambience. It then keeps the music
 evolving for as long as you study or rest.
 
-Published version: https://claude.ai/artifact/7AtTkHqGS5GMVLCMonGWzD
+Public site: https://twelvedesign.github.io/mezzanine/ (GitHub Pages, served from `main` of
+[twelvedesign/mezzanine](https://github.com/twelvedesign/mezzanine)).
+
+Claude artifact: https://claude.ai/artifact/7AtTkHqGS5GMVLCMonGWzD (viewers must be signed in to claude.ai).
 
 ## Run it
 
@@ -80,4 +83,4 @@ All scripts are classic (not ES modules) and share the `window.M` namespace, so 
 
 The recorded instruments come from the Musyng Kite soundfont (CC BY-SA 3.0), via
 [midi-js-soundfonts](https://github.com/gleitz/midi-js-soundfonts) by Benjamin Gleitzman.
-If you redistribute the samples, keep this credit and the same licence.
+If you redistribute the samples, keep this credit and the same licence. [samples/README.md](samples/README.md) has the details.
