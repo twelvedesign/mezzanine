@@ -224,6 +224,11 @@
       L.vary.addEventListener('input', () => { song.parts[id].vary = +L.vary.value; touched(); });
       faders.push(h('label', { title: 'How freely each pass improvises on the pattern' }, 'Vary', L.vary));
     }
+    // Brightness: the middle leaves the instrument as it is; a double-click puts it back there.
+    L.bright = h('input', { type: 'range', min: 0, max: 1, step: 0.01, id: 'bright-' + id, 'aria-label': meta.name + ' brightness' });
+    L.bright.addEventListener('input', () => { song.parts[id].bright = +L.bright.value; engine.applyMix(); touched(); });
+    L.bright.addEventListener('dblclick', () => { delete song.parts[id].bright; L.bright.value = 0.5; engine.applyMix(); touched(); });
+    faders.push(h('label', { title: 'Darker to the left, brighter to the right. Double-click for the middle.' }, 'Bright', L.bright));
     L.rest = h('span', { class: 'rest-tag', hidden: true }, 'resting');
     const head = h('div', { class: 'lane-head' },
       h('div', { class: 'lane-title' }, h('span', { class: 'dot' }), h('span', { class: 'lane-name' }, meta.name),
@@ -323,6 +328,7 @@
     L.voice.value = p.voice;
     L.vol.value = p.vol;
     if (L.vary) L.vary.value = p.vary;
+    L.bright.value = M.brightOf(p);
     if (meta.rows) syncCells(id);
     if (L.breathe) { L.breathe.classList.toggle('on-b', !!p.breathe); L.breathe.setAttribute('aria-pressed', !!p.breathe); }
     if (L.chips) L.chips.querySelectorAll('.tex-chip').forEach((c) => { const on = p.on && c.dataset.v === p.voice; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); });

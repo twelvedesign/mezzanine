@@ -359,6 +359,9 @@
   };
   M.PART = Object.fromEntries(M.PARTS.map((p) => [p.id, p]));
   M.DRUM_ROWS = ['Kick', 'Brush', 'Rim', 'Hat', 'Shaker'];
+  // A part's brightness (0 darkest, 0.5 as the instrument sounds, 1 brightest). Parts store one
+  // only once the listener moves it, so songs and codes without one are unchanged.
+  M.brightOf = (part) => (typeof part.bright === 'number' && isFinite(part.bright) ? Math.max(0, Math.min(1, part.bright)) : 0.5);
 
   /* ---------- Moods ("floors") ---------- */
   // `pace`: bars in each main section of the song's form (see js/evolve.js); slower floors change less often.
@@ -784,6 +787,7 @@
     };
     for (const [id, p] of Object.entries(song.parts)) {
       c.P[id] = { v: p.voice, o: p.on ? 1 : 0, l: +p.vol.toFixed(2), y: +p.vary.toFixed(2), br: p.breathe ? 1 : 0,
+        bt: p.bright == null ? undefined : +M.brightOf(p).toFixed(2),
         g: p.grid ? p.grid.map((row) => row.map((x) => (x ? Math.max(1, Math.round(x * 9)) : '.')).join('')) : undefined };
     }
     const json = JSON.stringify(c);
@@ -805,6 +809,7 @@
       const part = song.parts[id];
       if (!part) continue;
       Object.assign(part, { voice: p.v, on: !!p.o, vol: p.l, vary: p.y, breathe: !!p.br });
+      if (typeof p.bt === 'number') part.bright = p.bt;
       if (p.g) part.grid = p.g.map((row) => row.split('').map((ch) => (ch === '.' ? 0 : +ch / 9)));
     }
     return song;

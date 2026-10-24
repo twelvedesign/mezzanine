@@ -45,6 +45,7 @@
         id: meta.id, name: meta.name + (drums ? '' : ' · ' + (voice(p).label || p.voice)),
         channel: CHANNEL[meta.id], program: drums ? null : M.GM_PROGRAM[p.voice] || 0,
         volume: Math.round(Math.min(1, p.vol) * 127), notes: [],
+        bright: p.bright == null ? null : Math.round(M.brightOf(p) * 127), // CC74, only once the listener set one
         range: voice(p).range, shift: drums ? 0 : M.partShift(song, pool, meta.id, voice(p).range),
       };
     }
@@ -125,6 +126,7 @@
       const ev = [{ tick: 0, order: 0, bytes: meta(0x03, ascii(tr.name)) }];
       if (tr.program != null) ev.push({ tick: 0, order: 1, bytes: [0xc0 | ch, tr.program] });
       ev.push({ tick: 0, order: 1, bytes: [0xb0 | ch, 7, tr.volume] });
+      if (tr.bright != null) ev.push({ tick: 0, order: 1, bytes: [0xb0 | ch, 74, tr.bright] });
       for (const n of tr.notes) {
         ev.push({ tick: n.tick, order: 3, bytes: [0x90 | ch, n.midi, n.vel] });
         ev.push({ tick: n.tick + n.dur, order: 2, bytes: [0x80 | ch, n.midi, 64] }); // offs before ons on a shared tick

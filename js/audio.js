@@ -504,6 +504,17 @@
     return c;
   };
 
+  // A part's brightness as filter settings: below the middle a low-pass closes from Nyquist (no
+  // change) down to `low` Hz; above it a high shelf at `airFreq` lifts by up to `air` dB. The
+  // low-pass follows a curve (exponent 1.5) that reaches the instruments' own range sooner, so the
+  // first half of the travel is already audible (a quarter of the way is about 2.4 kHz).
+  M.BRIGHT = { low: 700, airFreq: 3000, air: 6 };
+  M.brightness = function (v, sr) {
+    const top = sr / 2, { low, air } = M.BRIGHT;
+    if (v >= 0.5) return { cutoff: top, shelf: air * (v - 0.5) * 2 };
+    return { cutoff: low * Math.pow(top / low, Math.pow(v * 2, 1.5)), shelf: 0 };
+  };
+
   /* ---------- Engine ---------- */
   const SENDS = {
     pad: [0.55, 0.12], keys: [0.32, 0.16], bass: [0.06, 0], arp: [0.45, 0.42],
@@ -571,13 +582,17 @@
       this.parts = {};
       for (const p of M.PARTS) {
         const input = ctx.createGain();
+        // brightness: a low-pass (Butterworth, -3.01 dB of resonance) then a high shelf
+        const dark = ctx.createBiquadFilter(); dark.type = 'lowpass'; dark.Q.value = -3.01; dark.frequency.value = ctx.sampleRate / 2;
+        const air = ctx.createBiquadFilter(); air.type = 'highshelf'; air.frequency.value = M.BRIGHT.airFreq; air.gain.value = 0;
         const vol = ctx.createGain();
         const arr = ctx.createGain();
         const rs = ctx.createGain(); rs.gain.value = SENDS[p.id][0];
         const ds = ctx.createGain(); ds.gain.value = SENDS[p.id][1];
-        input.connect(vol); vol.connect(arr); arr.connect(this.bus); arr.connect(rs); arr.connect(ds);
+        input.connect(dark); dark.connect(air); air.connect(vol);
+        vol.connect(arr); arr.connect(this.bus); arr.connect(rs); arr.connect(ds);
         rs.connect(this.revIn); ds.connect(this.delIn);
-        this.parts[p.id] = { input, vol, arr };
+        this.parts[p.id] = { input, dark, air, vol, arr };
       }
       this.bed = null;
 
@@ -707,6 +722,9 @@
         else this.parts[p.id].vol.gain.setTargetAtTime(target, t, 0.08);
         const a = this.arr[p.id] === undefined ? 1 : this.arr[p.id];
         this.parts[p.id].arr.gain.setTargetAtTime(a, t, a ? 0.6 : 1.4);
+        const { cutoff, shelf } = M.brightness(M.brightOf(sp), this.ctx.sampleRate), { dark, air } = this.parts[p.id];
+        if (instant) { dark.frequency.value = cutoff; air.gain.value = shelf; }
+        else { dark.frequency.setTargetAtTime(cutoff, t, 0.05); air.gain.setTargetAtTime(shelf, t, 0.05); }
       }
     }
     setArrangement(arr) { this.arr = arr; this.applyMix(); this.emit('arrange', arr); }

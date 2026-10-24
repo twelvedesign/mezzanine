@@ -231,7 +231,7 @@ input[type="range"] { width: 100%; accent-color: var(--brass); margin: 0; height
 .tbtn.on-m { background: var(--cell-beat); color: var(--muted); text-decoration: line-through; }
 .tbtn.on-s { background: var(--brass); color: var(--brass-ink); border-color: var(--brass); }
 .tbtn.on-b { border-color: var(--pc); color: var(--pc); }
-.faders { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.faders { display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 10px; }
 .faders label { display: grid; gap: 2px; font-size: 11px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
 .faders input { accent-color: var(--pc); }
 

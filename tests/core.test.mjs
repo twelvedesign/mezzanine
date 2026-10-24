@@ -234,6 +234,18 @@ test('links without a song in them are refused', () => {
   }
 });
 
+test("a part's brightness rides in song codes, and songs without one are unchanged", () => {
+  const s = M.generateSong('bright', 'rain');
+  for (const p of Object.values(s.parts)) { assert.equal(p.bright, undefined); assert.equal(M.brightOf(p), 0.5); }
+  s.parts.keys.bright = 0.2; s.parts.drums.bright = 0.9; s.edited = true;
+  const back = M.decodeSong(M.encodeSong(s));
+  assert.equal(back.parts.keys.bright, 0.2);
+  assert.equal(back.parts.drums.bright, 0.9);
+  assert.equal(back.parts.pad.bright, undefined, 'a part left alone stays without one');
+  assert.equal(M.brightOf({ bright: 7 }), 1);
+  assert.equal(M.brightOf({ bright: NaN }), 0.5);
+});
+
 test('evolution keeps grids well-formed', () => {
   const s = M.generateSong('evo', 'lobby');
   for (let i = 0; i < 200; i++) {

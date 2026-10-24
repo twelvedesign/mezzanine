@@ -33,7 +33,7 @@ Then visit http://localhost:8791.
   - Melodies are question-and-answer phrases written relative to the current chord, with an optional pentatonic filter. With Breathe on they rest every other two bars, taking turns across the loop so they reach every chord.
 - **Song form (Auto-arrange):** each song is told in rounds that repeat for as long as you listen. The first opens with an intro, then every round moves through the theme, a variation, the bridge, a breather and the return. Each section sets who plays and how much, drums fill into the next one, and the slow floors take longer over each section.
 - **Evolve:** patterns, chords and key change where sections start (now and then inside long ones too), seeded by the song, so a song replays the same journey. With Auto-arrange off the loop plays as written and Evolve makes a small change every eight bars.
-- **Sequencer:** the grid rows follow the chords, so any note you draw stays in key.
+- **Sequencer:** the grid rows follow the chords, so any note you draw stays in key. Each part has Level, Vary and Bright faders: Bright darkens the instrument to the left and adds air to the right, the middle leaves it as it is (double-click to return there). It is kept in song codes and sent to MIDI as CC74.
 - **Sounds:**
   - 14 recorded instruments, sampled from the Musyng Kite soundfont.
   - Synth voices built on FM, subtractive and pluck synthesis.

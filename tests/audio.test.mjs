@@ -98,3 +98,14 @@ test('a song can set its own tape amount, and old song codes keep their floor\'s
   assert.equal(M.mixFor({ ...song, fx: { ...song.fx, tape: 'x' } }).tape, floor, 'ignores junk');
   assert.equal(M.mixFor({ ...song, mood: 'lobby', fx: { ...song.fx, tape: 0.4 } }).tape, 0.4);
 });
+
+test('brightness is untouched in the middle, darker to the left and airier to the right', () => {
+  for (const sr of [44100, 48000]) {
+    assert.deepEqual(M.brightness(0.5, sr), { cutoff: sr / 2, shelf: 0 }, 'the middle changes nothing');
+    assert.deepEqual(M.brightness(0, sr), { cutoff: 700, shelf: 0 });
+    assert.deepEqual(M.brightness(1, sr), { cutoff: sr / 2, shelf: 6 });
+    let cutoff = 0, shelf = 0;
+    for (let k = 0; k <= 10; k++) { const c = M.brightness(k / 20, sr).cutoff; assert.ok(c > cutoff, 'darker to the left'); cutoff = c; }
+    for (let k = 11; k <= 20; k++) { const g = M.brightness(k / 20, sr).shelf; assert.ok(g > shelf, 'airier to the right'); shelf = g; }
+  }
+});

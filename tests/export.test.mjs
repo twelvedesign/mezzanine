@@ -194,8 +194,8 @@ function engineRun(song, bars, setup = () => {}) {
   try {
     const param = { value: 0, setTargetAtTime() {} };
     e.setSong(song);
-    e.ctx = { currentTime: 0 };
-    e.parts = new Proxy({}, { get: (_, id) => ({ input: id, vol: { gain: param }, arr: { gain: param } }) });
+    e.ctx = { currentTime: 0, sampleRate: 48000 };
+    e.parts = new Proxy({}, { get: (_, id) => ({ input: id, vol: { gain: param }, arr: { gain: param }, dark: { frequency: param }, air: { gain: param } }) });
     setup(e);
     let t = 0;
     for (let n = 0; n < bars * 16; n++) { bar = Math.floor(n / 16); e.schedule(n, t); t += e.stepDur(n); }
@@ -277,6 +277,19 @@ test("a section's last bar gets a drum fill", () => {
   const { drums } = engineRun(s, 6, (eng) => eng.setSection({ kind: 'bridge', label: 'Bridge', harmony: 'B', chapter: 0, index: 3, start: 0, bars: 6 }));
   const rows = (b) => drums.filter((d) => d.bar === b).map((d) => d.row).join();
   assert.notEqual(rows(5), rows(1), 'the last bar of a 6-bar section is a fill');
+});
+
+test('MIDI carries a brightness the listener set, as CC74 on that part', () => {
+  const s = M.generateSong('cc74', 'lobby');
+  for (const id of ['pad', 'keys', 'bass', 'arp', 'melody', 'drums']) s.parts[id].on = true;
+  s.parts.keys.bright = 0.25;
+  const score = M.songNotes(s, { bars: 2 });
+  const mid = readMidi(M.writeMidi(score));
+  score.tracks.forEach((tr, i) => {
+    const cc = mid.tracks[i + 1].events.filter((e) => e.type === 0xb0 && e.a === 74);
+    if (tr.id === 'keys') assert.deepEqual(cc.map((e) => [e.tick, e.b]), [[0, 32]]);
+    else assert.equal(cc.length, 0, tr.id + ' keeps its instrument\'s own brightness');
+  });
 });
 
 test('MIDI pad chords tie across a 2-bar chord instead of re-striking', () => {
